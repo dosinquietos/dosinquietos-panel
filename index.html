@@ -358,15 +358,31 @@ const TASK_CATEGORIES = [
   {id:'contabilidad',name:'📊 Contabilidad'},
   {id:'bancos',name:'🏦 Trámites bancarios'},
   {id:'operaciones',name:'⚙️ Operaciones'},
+  {id:'web',name:'🌐 Web'},
 ];
 
 const DEFAULT_TEMPLATES = [
-  {icon:'👋',title:'Bienvenida',type:'WhatsApp',text:'Hola [NOMBRE]! 🎉\n\nEstamos súper contentos de que hayas confiado en Dos Inquietos para tu viaje a [DESTINO].\n\nA partir de ahora somos tu equipo de viaje. Cualquier duda, escribinos por acá.\n\n— Vicky y Franco ✈️'},
-  {icon:'📞',title:'Confirmar videollamada',type:'WhatsApp',text:'Hola [NOMBRE]! Te confirmamos nuestra videollamada para [FECHA] a las [HORA].\n\nVamos a hablar sobre tu viaje a [DESTINO]. Preparate las preguntas que tengas.\n\nTe mandamos el link de Calendly: [LINK]'},
-  {icon:'💳',title:'Link de pago',type:'WhatsApp',text:'Hola [NOMBRE]! Te paso el link de pago por el concepto de [CONCEPTO] por USD [MONTO].\n\n🔗 [LINK AIRWALLEX]\n\nPodés pagar con Visa, Mastercard o Amex. Si tu tarjeta te da error, probá habilitando pagos internacionales desde tu homebanking. Tarda 2 minutos.'},
-  {icon:'📋',title:'Envío de propuesta',type:'Email',text:'Hola [NOMBRE]!\n\nTe adjuntamos la propuesta para tu viaje a [DESTINO].\n\nIncluye 3 escenarios con diferentes opciones de alojamiento. Nuestro fee de asesoría es de USD [FEE] por persona.\n\nRevisalo tranquilo y nos escribís con cualquier duda.\n\nAbrazo,\nVicky y Franco'},
+  {icon:'👋',title:'Primer contacto — Mensaje 1',type:'WhatsApp',text:'¡Hola! 🙌 Qué bueno que nos escribas, [DESTINO] es uno de nuestros destinos favoritos para organizar y hay MUL-TI-TUD de cosas a tener en cuenta para que salga perfecto.\n\nY te lo decimos con conocimiento de causa: viajamos personalmente a cada destino que organizamos, recorrimos más de 35 países y [DESTINO] es uno de ellos. No te vamos a armar nada que no hayamos vivido nosotros primero. 😊\n\nEntendemos que estás en cero todavía, y eso es lo ideal para arrancar: así no tenés nada mal encaminado y podemos ayudarte a armar todo desde el principio.\n\nNuestro trabajo es exactamente ese: que vos no tengas que saber por dónde empezar, porque para eso estamos nosotros.'},
+  {icon:'📞',title:'Primer contacto — Mensaje 2 (audio o texto)',type:'WhatsApp',text:'Te contamos un poco lo que hacemos: somos asesores de viajes y nos especializamos en diseñar y organizar viajes a medida, desde cero. No somos una agencia tradicional y no vendemos paquetes armados: cada viaje se construye junto con el cliente, de acuerdo a su presupuesto y a lo que realmente quiere vivir.\n\nNos encargamos de todo: itinerario, vuelos, alojamientos, traslados, seguros y absolutamente todas las reservas. Además, cuando estás de viaje armamos un grupo de WhatsApp para que tengas respaldo ante cualquier cosa que surja.\n\nCobramos por nuestra asesoría y organización, es nuestro trabajo y lo hacemos con dedicación completa.\n\nSi te interesa y estás dispuesto a invertir en que nosotros lo organicemos todo por vos, lo que hacemos es una llamada corta de unos 20 minutos para entender cómo te imaginás el viaje y de ahí te armamos una propuesta personalizada.\n\n¿Tenés disponibilidad esta semana, por ejemplo el miércoles o el jueves a la tarde?'},
+  {icon:'🤔',title:'No sabe por dónde empezar',type:'WhatsApp',text:'¡Qué bueno que nos escribas justo ahora! Estar en cero es lo ideal para arrancar: así no tenés nada mal encaminado y podemos ayudarte a armar todo desde el principio.\n\nNuestro trabajo es exactamente ese: que vos no tengas que saber por dónde empezar, porque para eso estamos nosotros. 😊\n\n¿Hacemos una llamada corta de 20 minutos esta semana para contarte cómo trabajamos y entender qué tipo de viaje tenés en mente?\n\n¿El miércoles o el jueves a la tarde te queda bien?'},
+  {icon:'📋',title:'Qué incluye el servicio',type:'WhatsApp',text:'Nuestro servicio incluye todo el proceso de planificación y organización del viaje:\n\n• Diseño del itinerario a medida según tu presupuesto\n• Búsqueda y comparación de vuelos y alojamientos\n• Coordinación de traslados y actividades\n• Gestión de seguros de viaje\n• Absolutamente todas las reservas\n• Acompañamiento durante todo el proceso hasta que volvés\n• Grupo de WhatsApp durante el viaje para cualquier imprevisto\n\nNo vendemos paquetes armados: cada viaje se construye con vos. Y lo hacemos con conocimiento de primera mano: viajamos personalmente a cada destino, recorrimos más de 35 países. 😊'},
+  {icon:'💰',title:'Costo del servicio',type:'WhatsApp',text:'Nuestra asesoría tiene un costo de U$D 200 por persona. Eso incluye todo el proceso de planificación: el diseño del itinerario a medida, la búsqueda y comparación de vuelos y alojamientos, los traslados, y nos encargamos de absolutamente todas las reservas.\n\nAdemás, cuando estás de viaje armamos un grupo de WhatsApp para que tengas respaldo ante cualquier cosa que surja.\n\nNo es un servicio puntual, estamos con vos desde el principio hasta que volvés a casa. 😊'},
+  {icon:'🧮',title:'Pide presupuesto exacto',type:'WhatsApp',text:'Respecto al presupuesto, te somos honestos: darte un número exacto en este momento no sería responsable de nuestra parte. El costo final depende de un montón de decisiones que vamos tomando juntos durante el proceso.\n\nLo que sí te podemos dar es una idea de rangos:\n\n• Viaje con alojamientos 3 estrellas, transporte y actividades: ~U$D 1.400/persona sin vuelos\n• Vuelos internacionales: ~U$D 2.000/persona\n\nEstos números son orientativos y pueden moverse según las decisiones que vayas tomando.\n\nTrabajamos con cupos limitados por mes porque cada viaje requiere dedicación completa. Si te interesa avanzar, lo ideal es que reserves tu lugar.\n\n¿Te parece bien que coordinemos una llamada esta semana?'},
+  {icon:'⏳',title:'"Yo te aviso"',type:'WhatsApp',text:'Perfecto, no hay apuro. Te mando un recordatorio en unos días para que no se pierda el hilo.\n\n¿Tenés pensado viajar antes del verano o después?'},
+  {icon:'😅',title:'No apareció a la videollamada',type:'WhatsApp',text:'Hola, quedé esperándote hoy a las [HORA]. Pasa, no te preocupes.\n\n¿Podemos reagendar para esta semana? Tengo el jueves y el viernes disponibles.'},
+  {icon:'💵',title:'Pide precio antes de hablar',type:'WhatsApp',text:'El precio depende mucho de cómo armemos el viaje, y hay una diferencia enorme según las fechas, los vuelos y lo que quieras vivir.\n\nPor eso lo que hacemos primero es entender qué buscás, y así te damos un número real y no uno genérico que después no coincide con nada.\n\n¿Hacemos esa llamada rápida de 20 minutos?'},
+  {icon:'🤷',title:'"Lo tengo que pensar"',type:'WhatsApp',text:'Claro, tomátelo con calma. Por las dudas te cuento que trabajamos con cupos limitados por mes, así que si decidís avanzar avisanos para reservar tu lugar antes de que se llene.\n\nCualquier duda que surja mientras lo pensás, escribinos sin problema. 😊'},
+  {icon:'💸',title:'Pide descuento',type:'WhatsApp',text:'Entendemos que siempre se busca optimizar el presupuesto. Nuestro valor de asesoría está pensado para cubrir dedicación completa: desde la primera llamada hasta que volvés a casa, con todo gestionado por nosotros.\n\nNo es un servicio estándar y eso tiene un valor real.\n\nLo que sí podemos hacer es trabajar el viaje de acuerdo a tu presupuesto disponible para que la inversión total tenga el mayor sentido posible.'},
+  {icon:'🙅',title:'Quiere solo consejos gratis',type:'WhatsApp',text:'¡Gracias por escribirnos! Nuestro trabajo es el de asesoría y organización integral, por lo que no brindamos consultas puntuales por fuera del servicio.\n\nSi en algún momento decidís encarar el viaje con todo organizado, acá estamos. 😊'},
+  {icon:'🏨',title:'Presupuesto — no sabe cuánto gastar',type:'WhatsApp',text:'Para poder orientarlos bien, no necesito que sepan cuánto sale un hotel, eso lo resolvemos nosotros.\n\nLo que sí me ayuda mucho es tener una idea del presupuesto total por persona para todo el viaje, incluyendo vuelos. Con un rango aproximado nos alcanza.\n\n¿Se ubican más en una de estas opciones?\n\n• Económico: viaje justo, priorizando precio\n• Intermedio: buena relación calidad-precio\n• Confortable: hoteles de buen nivel, bien ubicados\n\nCon eso ya podemos armarles una propuesta que tenga sentido. 😊'},
+  {icon:'💳',title:'Link de pago Airwallex',type:'WhatsApp',text:'Hola [NOMBRE]! Te paso el link de pago por el concepto de [CONCEPTO] por USD [MONTO].\n\n🔗 [LINK AIRWALLEX]\n\nPodés pagar con Visa, Mastercard o Amex. Si tu tarjeta te da error, probá habilitando pagos internacionales desde tu homebanking. Tarda 2 minutos.\n\nSi pagás el resumen desde tu caja de ahorro en dólares, no tenés el recargo del 30% ARCA.'},
+  {icon:'📄',title:'Envío de propuesta',type:'Email',text:'Hola [NOMBRE]!\n\n¡Qué ganas de organizar este viaje juntos!\n\nTe adjuntamos la propuesta para tu viaje a [DESTINO] con las opciones que conversamos. Incluye:\n\n→ Itinerario día a día tentativo\n→ Opciones de vuelos y rangos de precio\n→ Opciones de alojamiento (3 alternativas)\n→ Actividades recomendadas\n→ Precio del servicio de organización\n\nNuestro fee de asesoría es de USD [FEE] por persona.\n\nTomense el tiempo que necesiten para revisarlo. Para confirmar necesitamos el 50% del fee.\n\n¡Esperamos sus noticias! ✈️\n\nVicky & Fran\nDos Inquietos\nviajes@dosinquietos.com'},
   {icon:'⏰',title:'Follow-up día 3',type:'WhatsApp',text:'Hola [NOMBRE]! ¿Pudiste pensar en lo que hablamos?\n\nTe dejo dos horarios por si querés que hagamos la videollamada:\n• [OPCIÓN 1]\n• [OPCIÓN 2]\n\nSi te queda mejor otro día/horario, decime y lo coordinamos 🙂'},
   {icon:'🔴',title:'Follow-up día 6',type:'WhatsApp',text:'Hola [NOMBRE]! Sé que a veces la vida se complica 😅\n\n¿Seguís con ganas de armar el viaje a [DESTINO]? Si cambió algo, contame y vemos cómo ajustar.'},
+  {icon:'📋',title:'Checklist pre-viaje',type:'Email',text:'¡Hola [NOMBRE]! Ya falta poco para tu viaje a [DESTINO] 🎒\n\nAntes de viajar revisá que tengas todo:\n\nDOCUMENTOS\n✅ Pasaporte vigente (mín 6 meses)\n✅ Visas tramitadas\n✅ Seguro de viaje\n✅ Vacunas al día\n\nRESERVAS (en tu Drive)\n✅ Voucher de vuelos\n✅ Vouchers de hoteles\n✅ Vouchers de transportes\n✅ Confirmaciones de actividades\n\nAPP\n✅ Wanderlog con tu itinerario\n✅ Nuestro WhatsApp guardado\n\n¡Buen viaje! 🌍\nVicky & Fran · Dos Inquietos'},
+  {icon:'⭐',title:'Pedido de testimonio post-viaje',type:'WhatsApp',text:'Hola [NOMBRE]! ¿Cómo están? ¿Cómo fue el viaje a [DESTINO]?\n\nNos encantaría saber todo 😊\n\nSi tuvieras 2 minutitos, nos harías un enorme favor dejando una reseña en Google:\n\n[LINK GOOGLE REVIEWS]\n\n¡Muchísimas gracias! Y si conocen a alguien que quiera viajar, ya saben dónde estamos 🙌\n\nVicky & Fran · Dos Inquietos'},
+  {icon:'🎁',title:'Bono por recomendación',type:'WhatsApp',text:'Hola [NOMBRE]!\n\nGracias por haber viajado con nosotros 🙏\n\nTenemos un programa de recomendaciones: si nos referís a alguien que termine viajando con Dos Inquietos, te regalamos un descuento de USD [MONTO] en tu próximo viaje.\n\nSi tenés amigos o familia con ganas de viajar, nos presentás y los dos ganan 😊\n\nVicky & Fran · Dos Inquietos'},
+  {icon:'👋',title:'Bienvenida al viaje',type:'WhatsApp',text:'Hola [NOMBRE]! 🎉\n\nEstamos súper contentos de que hayas confiado en Dos Inquietos para tu viaje a [DESTINO].\n\nA partir de ahora somos tu equipo de viaje. Vas a tener acceso a una carpeta en Drive con todos los documentos, y te vamos a ir cargando todo a medida que avance.\n\nCualquier duda, escribinos por acá.\n\n— Vicky y Franco ✈️'},
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -420,16 +436,137 @@ function loadLocal(){
     const p = JSON.parse(s);
     Object.assign(D, p);
   }
-  if(!Object.keys(D.templates).length) loadDefaultTemplates();
+  let changed = false;
+  if(!Object.keys(D.templates).length){loadDefaultTemplates();changed=true;}
+  if(!Object.keys(D.tasks).length){loadDefaultTasks();changed=true;}
+  if(!Object.keys(D.clients).length){loadDefaultClients();changed=true;}
+  if(changed) save();
   renderCurrent();
 }
 
 function loadDefaultTemplates(){
-  DEFAULT_TEMPLATES.forEach(t => {
-    const id = 'tpl_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
-    D.templates[id] = {...t, createdAt: Date.now()};
+  DEFAULT_TEMPLATES.forEach((t,i) => {
+    D.templates['tpl_'+i] = {...t, createdAt: Date.now()+i};
   });
-  save();
+}
+
+function loadDefaultTasks(){
+  const tasks = [
+    // PROVEEDORES
+    {title:'Verificar estado del trámite TIDS',cat:'proveedores',pri:'rd',notes:'Entrar al portal de IATA y revisar estado. El TIDS es la llave para acceder a más proveedores.'},
+    {title:'Aplicar a Hotelbeds como partner',cat:'proveedores',pri:'rd',notes:'Ir al sitio de Hotelbeds, completar formulario de partner con el ABN. Proceso tarda 1-2 semanas.'},
+    {title:'Completar aplicación a Duffel (vuelos)',cat:'proveedores',pri:'rd',notes:'Vuelos sin IATA. USD 3/orden + 1%. Completar el registro.'},
+    {title:'Completar aplicación a Rail Europe',cat:'proveedores',pri:'yw',notes:'Portal B2B: agent.raileurope.com. Aplicación enviada.'},
+    {title:'Completar aplicación a HotelDo',cat:'proveedores',pri:'yw',notes:'Especialista LATAM y Caribe. Aplicación enviada.'},
+    {title:'Aplicar a Civitatis',cat:'proveedores',pri:'yw',notes:'Comisión 10%. En proceso de aplicación.'},
+    {title:'Aplicar a Allianz Partners / Cover-More (seguros)',cat:'proveedores',pri:'yw',notes:'Comisión 20-30% en seguros de viaje.'},
+    {title:'Aplicar a Carnect (alquiler de autos)',cat:'proveedores',pri:'gn',notes:'Alquiler de autos B2B. Comisión 8-15%.'},
+    // TRÁMITES BANCARIOS
+    {title:'Re-aplicar Airwallex payment gateway',cat:'bancos',pri:'rd',notes:'Primera aplicación rechazada 7/4/2026. Sitio web actualizado. Apelación enviada. Re-aplicar desde Airwallex → Payments → Get started.'},
+    {title:'Verificar estado de apelación Airwallex',cat:'bancos',pri:'rd',notes:'Apelación enviada a support@airwallex.com. Verificar respuesta.'},
+    {title:'Mantener buffer USD 500-1000 en wallet Airwallex',cat:'bancos',pri:'yw',notes:'Liquidez para cubrir pagos a proveedores antes del settlement del cliente (T+0 a T+5).'},
+    // MARKETING
+    {title:'Re-grabar video verificación Google Business Profile',cat:'marketing',pri:'rd',notes:'Video rechazado. Debe ser un solo take 60-90 seg. Imprimir hoja A4 con "Dos Inquietos — Travel Advisory". Mostrar Flood St 18, interior con laptop en dosinquietos.com.'},
+    {title:'Publicar al menos 3 veces por semana en Instagram',cat:'marketing',pri:'rd',notes:'Sin contenido consistente el algoritmo no muestra el perfil. Contenido: destinos, detrás de escena, tips de viaje, cuánto costó mi viaje.'},
+    {title:'Pedir reseñas a Marian, Monica y Brenda en Google',cat:'marketing',pri:'rd',notes:'Los tres testimonios del sitio. Pedirles que dejen reseña en Google Business Profile.'},
+    {title:'Grabar testimonios en video que mencionen proceso de pago',cat:'marketing',pri:'yw',notes:'Los clientes hablando de cómo fue la experiencia de pago. Genera confianza para nuevos leads.'},
+    {title:'Implementar secuencia follow-up D1/3/6/10 en ManyChat',cat:'marketing',pri:'rd',notes:'CUELLO DE BOTELLA CRÍTICO. Mucha gente dice que quiere hablar pero nunca agenda. La secuencia de 4 pasos es la solución.'},
+    {title:'Configurar broadcasts mensuales por destino en ManyChat',cat:'marketing',pri:'yw',notes:'Para leads DI-NO-AHORA. Reactivar con contenido de destino relevante.'},
+    {title:'Corregir bug en rama acompañado del flow Tailandia ManyChat',cat:'marketing',pri:'yw',notes:'Bug reportado en v9.'},
+    // CONTENIDO
+    {title:'Crear Reel "Cuánto me costó mi viaje a Italia"',cat:'contenido',pri:'yw',notes:'Mayor engagement del nicho. Formato que trae leads directos.'},
+    {title:'Crear carrusel "X cosas que nadie te dice de Tailandia"',cat:'contenido',pri:'yw',notes:'Genera guardados y compartidos. Buen reach orgánico.'},
+    {title:'Crear Reel "Antes vs después de contratar una agencia"',cat:'contenido',pri:'yw',notes:'Formato testimonial + educativo. Muestra el valor del servicio.'},
+    {title:'Batch de producción semanal (domingos 2h)',cat:'contenido',pri:'gn',notes:'30 min: 5 ideas + captions. 30 min: 2 carruseles Canva. 60 min: 2-3 Reels CapCut. Programar en Metricool.'},
+    // CREACIÓN DE MARCA
+    {title:'Actualizar página Sobre Nosotros',cat:'marca',pri:'yw',notes:'Pendiente según metodología v12.'},
+    {title:'Certificación ATAS/ATIA',cat:'marca',pri:'yw',notes:'En proceso. Impacto ALTO en credibilidad.'},
+    {title:'Mostrar destinos y precio arriba del fold en la web',cat:'marca',pri:'rd',notes:'Mejora prioritaria de conversión en dosinquietos.com.'},
+    {title:'Agregar CTA directo a WhatsApp con mensaje pre-cargado',cat:'marca',pri:'rd',notes:'En la web. Mejora conversión directa.'},
+    {title:'Agregar imagen del producto (captura itinerario Wanderlog)',cat:'marca',pri:'yw',notes:'Que el visitante de la web vea qué recibe. Claridad.'},
+    {title:'Agregar ejemplo de itinerario concreto (14 días Europa)',cat:'marca',pri:'gn',notes:'Diferenciación. Que vean un ejemplo real.'},
+    // CONTABILIDAD
+    {title:'Confirmar elegibilidad GST-free del fee con un contador',cat:'contabilidad',pri:'yw',notes:'Fee de asesoría a clientes en Argentina = exportación de servicio. Debería ser GST-FREE.'},
+    {title:'Abrir cuenta bancaria separada para impuestos',cat:'contabilidad',pri:'yw',notes:'Separar 25-30% de cada ingreso para impuestos.'},
+    {title:'Registrar horas de home office semanalmente',cat:'contabilidad',pri:'gn',notes:'$0.70/hora deducible. Registrar todas las semanas.'},
+    {title:'Planificar compras de activos antes del 30/6/2026',cat:'contabilidad',pri:'gn',notes:'Fin de año fiscal australiano.'},
+    {title:'Guardar facturas de marketing para EMDG Round 5',cat:'contabilidad',pri:'gn',notes:'Export Market Development Grant. Guardar todas las facturas con propósito claro.'},
+    // OPERACIONES
+    {title:'Completar TIDS cuando llegue carta de RateHawk',cat:'operaciones',pri:'yw',notes:'Acceso a más proveedores.'},
+    {title:'Construir dashboard Firebase con pipeline de leads',cat:'operaciones',pri:'gn',notes:'Ya en desarrollo — este dashboard.'},
+    {title:'Revisar el dashboard cada mañana (5 min)',cat:'operaciones',pri:'rd',notes:'Ver en qué paso está cada cliente, qué vence, qué hay que hacer hoy.'},
+    {title:'Registrar cada nuevo lead en el dashboard',cat:'operaciones',pri:'rd',notes:'Cada consulta se anota. Después de 30 días van a tener datos reales de conversión.'},
+    // CLIENTE
+    {title:'Seguir el checklist de pasos para cada cliente nuevo',cat:'cliente',pri:'rd',notes:'Cada cliente entra en el dashboard. Cada paso se marca. No saltear pasos.'},
+    {title:'Mandar pedido de reseña 3 días post-viaje a cada cliente',cat:'cliente',pri:'yw',notes:'Sistemáticamente. Usar la plantilla de pedido de testimonio.'},
+    {title:'Cargar cada reserva confirmada en Drive del cliente',cat:'cliente',pri:'yw',notes:'Cada voucher, confirmación, pasaje tiene que estar en la carpeta del cliente en Drive.'},
+    // WEB
+    {title:'Mostrar destinos y precio arriba del fold (hero section)',cat:'web',pri:'rd',notes:'La web no muestra qué destinos ni rangos de precio en la parte visible. Impacto directo en conversión.'},
+    {title:'Agregar CTA directo a WhatsApp con mensaje pre-cargado',cat:'web',pri:'rd',notes:'Botón que abra WhatsApp con texto pre-armado. Reduce fricción de contacto.'},
+    {title:'Agregar campo "¿Cómo nos conociste?" al formulario de contacto',cat:'web',pri:'rd',notes:'Instagram / Me lo recomendó alguien / Buscando en Google / Otro. Clave para medir conversión por canal.'},
+    {title:'Corregir footer de /contacto: dice "Agencia de viajes" en vez de "Consultoría de viajes"',cat:'web',pri:'rd',notes:'Inconsistente con la home. Metodología v12 dice "Consultoría de viajes personalizada".'},
+    {title:'Agregar testimonios con contexto real (destino, duración, frase)',cat:'web',pri:'yw',notes:'Los testimonios actuales son genéricos. Agregar destino, duración del viaje y frase específica.'},
+    {title:'Agregar imagen del producto (captura itinerario Wanderlog)',cat:'web',pri:'yw',notes:'Que el visitante vea qué recibe. Screenshot de un itinerario real en Wanderlog.'},
+    {title:'Mostrar tiempo de entrega del itinerario visible',cat:'web',pri:'yw',notes:'Ej: "Recibís tu itinerario en 48-72hs". Genera confianza y expectativa clara.'},
+    {title:'Agregar ejemplo de itinerario concreto (14 días Europa)',cat:'web',pri:'gn',notes:'Diferenciación. Que vean un ejemplo real de lo que reciben.'},
+    {title:'Actualizar página Sobre Nosotros',cat:'web',pri:'yw',notes:'Pendiente según metodología v12. La página actual es básica.'},
+    {title:'Agregar UTM params a links de ManyChat → formulario',cat:'web',pri:'rd',notes:'Cada flow de ManyChat debe mandar el link con ?ref=reel_nombre para trackear origen en el dashboard.'},
+  ];
+  tasks.forEach((t,i) => {
+    D.tasks['task_'+i] = {...t, done:false, deadline:null, createdAt: Date.now()+i};
+  });
+}
+
+function loadDefaultClients(){
+  const mkSteps = (doneCount) => {
+    const s = {};
+    DEFAULT_STEPS.forEach((st,i) => { s['s'+i] = {text:st.text, phase:st.phase, tag:st.tag, done:i<doneCount}; });
+    return s;
+  };
+  const clients = [
+    {id:'c_nicolino',name:'Nicolino',dest:'Sudeste Asiático',fee:350,feeCobrado:350,feePendiente:0,comision:240.11,travelers:2,notes:'Fee 100% cobrado. Comisiones Expedia $213.82 + Civitatis $86.32. Total facturado $590.'},
+    {id:'c_maxi',name:'Maxi',dest:'',fee:150,feeCobrado:150,feePendiente:0,comision:232,travelers:2,notes:'Fee 100% cobrado. Comisiones Expedia $290. Cobrado comisiones $240.27. Total $382.'},
+    {id:'c_iaia',name:'Iaia',dest:'',fee:150,feeCobrado:150,feePendiente:0,comision:143.20,travelers:2,notes:'Fee 100% cobrado. Comisiones Expedia $179.99. Total $293.20.'},
+    {id:'c_gasperin',name:'Gasperin',dest:'',fee:0,feeCobrado:0,feePendiente:0,comision:477.41,travelers:2,notes:'Sin fee cobrado. Comisiones Expedia $596.76. Comisión cargada $477.41. Total $477.41.'},
+    {id:'c_sarr',name:'Sarr',dest:'',fee:150,feeCobrado:150,feePendiente:0,comision:110.40,travelers:2,notes:'Fee 100% cobrado. Comisiones Expedia $137.47 + Civitatis $5.40. Cobrado comisiones $114.72. Total $260.40.'},
+    {id:'c_bottos',name:'Bottos',dest:'',fee:350,feeCobrado:175,feePendiente:175,comision:266.40,travelers:2,notes:'⚠️ Fee 50% PENDIENTE ($175). Comisiones Expedia $333 + Civitatis $72. Total proyectado $683.'},
+    {id:'c_maria',name:'María',dest:'',fee:150,feeCobrado:75,feePendiente:75,comision:384,travelers:2,notes:'⚠️ Fee 50% PENDIENTE ($75). Comisiones Expedia $499.90. Total proyectado $649.90.'},
+    {id:'c_manfroi',name:'Manfroi',dest:'',fee:800,feeCobrado:400,feePendiente:400,comision:0,travelers:2,notes:'⚠️ Fee 50% PENDIENTE ($400). Sin comisiones aún. Total proyectado $800.'},
+    {id:'c_perillo',name:'Perillo',dest:'',fee:700,feeCobrado:350,feePendiente:350,comision:0,travelers:2,notes:'⚠️ Fee 50% PENDIENTE ($350). Sin comisiones aún. Total proyectado $700.'},
+    {id:'c_parrella',name:'Parrella',dest:'',fee:300,feeCobrado:150,feePendiente:150,comision:0,travelers:2,notes:'⚠️ Fee 50% PENDIENTE ($150). Comisiones RateHawk $84.34 + STUBA $28.97. Cobrado STUBA $28.97. Total $300.'},
+    {id:'c_belen',name:'Belén',dest:'',fee:440,feeCobrado:0,feePendiente:440,comision:0,travelers:2,notes:'🔴 Fee 100% PENDIENTE ($440). Sin comisiones. Total proyectado $440.'},
+  ];
+  clients.forEach((c,i) => {
+    const doneSteps = c.feeCobrado > 0 && c.feePendiente === 0 ? 20 : c.feeCobrado > 0 ? 10 : 3;
+    D.clients[c.id] = {
+      name:c.name, email:'', phone:'', dest:c.dest,
+      canal:'', ref:'', budget:'', travelers:c.travelers,
+      notes:c.notes, steps:mkSteps(doneSteps), tasks:{},
+      valorViaje:0, fee:c.fee, comision:c.comision,
+      fechaViaje:'', createdAt:Date.now()+i
+    };
+  });
+  // Pre-load payments
+  const payments = [
+    {clientId:'c_nicolino',concept:'Fee 100%',amount:350,method:'Stripe',status:'Cobrado',date:'2026-01-15'},
+    {clientId:'c_maxi',concept:'Fee 100%',amount:150,method:'Stripe',status:'Cobrado',date:'2026-02-01'},
+    {clientId:'c_iaia',concept:'Fee 100%',amount:150,method:'Stripe',status:'Cobrado',date:'2026-02-10'},
+    {clientId:'c_sarr',concept:'Fee 100%',amount:150,method:'Stripe',status:'Cobrado',date:'2026-02-15'},
+    {clientId:'c_bottos',concept:'Fee 50%',amount:175,method:'Stripe',status:'Cobrado',date:'2026-03-01'},
+    {clientId:'c_bottos',concept:'Fee 50% restante',amount:175,method:'Airwallex link',status:'Pendiente',date:''},
+    {clientId:'c_maria',concept:'Fee 50%',amount:75,method:'Stripe',status:'Cobrado',date:'2026-03-05'},
+    {clientId:'c_maria',concept:'Fee 50% restante',amount:75,method:'Airwallex link',status:'Pendiente',date:''},
+    {clientId:'c_manfroi',concept:'Fee 50%',amount:400,method:'Stripe',status:'Cobrado',date:'2026-03-15'},
+    {clientId:'c_manfroi',concept:'Fee 50% restante',amount:400,method:'Airwallex link',status:'Pendiente',date:''},
+    {clientId:'c_perillo',concept:'Fee 50%',amount:350,method:'Stripe',status:'Cobrado',date:'2026-03-20'},
+    {clientId:'c_perillo',concept:'Fee 50% restante',amount:350,method:'Airwallex link',status:'Pendiente',date:''},
+    {clientId:'c_parrella',concept:'Fee 50%',amount:150,method:'Stripe',status:'Cobrado',date:'2026-03-25'},
+    {clientId:'c_parrella',concept:'Fee 50% restante',amount:150,method:'Airwallex link',status:'Pendiente',date:''},
+    {clientId:'c_belen',concept:'Fee 100%',amount:440,method:'Airwallex link',status:'Pendiente',date:''},
+  ];
+  payments.forEach((p,i) => {
+    D.payments['pay_'+i] = {...p, createdAt:Date.now()+i};
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
