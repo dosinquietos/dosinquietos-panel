@@ -417,6 +417,12 @@ function initFirebase(){
       D.content = val.content||{};
       D.payments = val.payments||{};
       D.categories = val.categories||[...TASK_CATEGORIES];
+    } else {
+      // Base vacía — cargar datos por defecto
+      loadDefaultTemplates();
+      loadDefaultTasks();
+      loadDefaultClients();
+      save();
     }
     renderCurrent();
   });
