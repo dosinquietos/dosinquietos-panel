@@ -408,6 +408,17 @@ let taskCatFilter = 'todos';
 let taskPriFilter = 'todos';
 let contFilter = 'cal';
 let clientFilter = 'activo';
+let cashMonth = new Date().getMonth(); // 0=Jan current month
+let cashView = 'mensual'; // mensual or resumen
+
+const MONTHLY_EXPENSES = {
+  // [month 0-11]: {item: amount}
+  defaults: {
+    'Claude Max':104,'ChatGPT':20,'ManyChat':29,'CapCut':14.95,'Canva':13.20,'Wanderlog':3.30
+  },
+  archer: {0:79,1:79,2:79,3:79,4:79,5:79}, // ene-jun
+  oneTime: {0:{'Gonza':425},1:{'Gonza':425}} // ene-feb
+};
 
 // ═══════════════════════════════════════════════════════════════
 // FIREBASE
@@ -1375,48 +1386,130 @@ function exportCommissions(){
 function renderCash(){
   const payments = Object.entries(D.payments).map(([id,p])=>({...p,_id:id}));
   const clients = D.clients;
+  const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   
-  const cobrado = payments.filter(p=>p.status==='Cobrado').reduce((a,p)=>a+p.amount,0);
-  const pendiente = payments.filter(p=>p.status==='Pendiente').reduce((a,p)=>a+p.amount,0);
-  const settlement = payments.filter(p=>p.status==='En settlement').reduce((a,p)=>a+p.amount,0);
-  const totalFees = Object.values(clients).reduce((a,c)=>a+(c.fee||0),0);
-  const totalViajes = Object.values(clients).reduce((a,c)=>a+(c.valorViaje||0),0);
-  
-  // Commission breakdown from client commissions
-  let commCobradas = 0, commPendientes = 0;
+  // All-time totals
+  const allFeesCobrados = payments.filter(p=>p.status==='Cobrado').reduce((a,p)=>a+p.amount,0);
+  const allFeesPendientes = payments.filter(p=>p.status==='Pendiente').reduce((a,p)=>a+p.amount,0);
+  let allCommCobradas=0,allCommPendientes=0;
   Object.values(clients).forEach(c=>{
-    if(c.commissions){
-      Object.values(c.commissions).forEach(cm=>{
-        if(cm.status==='cobrada') commCobradas += cm.netAmount||0;
-        else commPendientes += cm.netAmount||0;
-      });
-    }
+    if(c.commissions) Object.values(c.commissions).forEach(cm=>{
+      if(cm.status==='cobrada') allCommCobradas+=cm.netAmount||0;
+      else allCommPendientes+=cm.netAmount||0;
+    });
   });
-  const totalComisiones = commCobradas + commPendientes;
   
-  let paymentsHTML = payments.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).map(p=>{
-    const clientName = clients[p.clientId]?.name || '—';
-    const statusClass = p.status==='Cobrado'?'pos':p.status==='Pendiente'?'neg':'';
-    return `<div class="cfrow"><span>${clientName}<br><span style="font-size:10px;color:var(--tx3)">${p.concept} · ${p.method} · ${p.date||''}</span></span><span class="cfval ${statusClass}">$${p.amount.toLocaleString()}</span></div>`;
-  }).join('');
+  // Monthly breakdown
+  function getMonthExpenses(m){
+    let total=0,items=[];
+    Object.entries(MONTHLY_EXPENSES.defaults).forEach(([k,v])=>{items.push({name:k,amount:v});total+=v;});
+    if(MONTHLY_EXPENSES.archer[m]!==undefined){items.push({name:'Archer Travel',amount:79});total+=79;}
+    if(MONTHLY_EXPENSES.oneTime[m]){
+      Object.entries(MONTHLY_EXPENSES.oneTime[m]).forEach(([k,v])=>{items.push({name:k,amount:v});total+=v;});
+    }
+    return {items,total};
+  }
   
-  document.getElementById('cashArea').innerHTML = `
-    <div class="kgrid">
-      <div class="kcard"><div class="kl">Fees cobrados</div><div class="kv" style="color:var(--gn)">$${cobrado.toLocaleString()}</div></div>
-      <div class="kcard"><div class="kl">Fees pendientes</div><div class="kv" style="color:var(--rd)">$${pendiente.toLocaleString()}</div></div>
-      <div class="kcard"><div class="kl">💰 Comisiones cobradas</div><div class="kv" style="color:var(--gn)">$${commCobradas.toFixed(0)}</div></div>
-      <div class="kcard"><div class="kl">⏳ Comisiones post-viaje</div><div class="kv" style="color:var(--yw)">$${commPendientes.toFixed(0)}</div></div>
-    </div>
-    <div class="lcard" style="cursor:default">
-      <div class="lcard-name" style="margin-bottom:6px">Resumen</div>
-      <div class="cfrow"><span>Total fees</span><span class="cfval">$${totalFees.toLocaleString()}</span></div>
-      <div class="cfrow"><span>Total comisiones</span><span class="cfval">$${totalComisiones.toFixed(0)}</span></div>
-      <div class="cfrow"><span>💰 Disponible ahora</span><span class="cfval pos" style="font-size:16px">$${(cobrado+commCobradas).toFixed(0)}</span></div>
-      <div class="cfrow"><span>⏳ Por cobrar (fees + comisiones)</span><span class="cfval" style="color:var(--yw)">$${(pendiente+commPendientes).toFixed(0)}</span></div>
-      <div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Ingreso proyectado total</span><span class="cfval pos" style="font-size:16px">$${(totalFees+totalComisiones).toFixed(0)}</span></div>
-    </div>
-    <div class="shdr"><h3>Movimientos</h3><div style="display:flex;gap:6px"><button class="btn-add" onclick="exportCommissions()">📊 Exportar</button><button class="btn-add" onclick="openModal('addPayment')">+ Pago</button></div></div>
-    ${paymentsHTML||'<div class="empty"><div class="em">💰</div><p>Sin movimientos registrados</p></div>'}`;
+  function getMonthIncome(m){
+    const monthPayments = payments.filter(p=>{
+      if(!p.date) return false;
+      const d=new Date(p.date);
+      return d.getMonth()===m && d.getFullYear()===2026;
+    });
+    const feesCobrados = monthPayments.filter(p=>p.status==='Cobrado').reduce((a,p)=>a+p.amount,0);
+    let commissions = 0;
+    Object.values(clients).forEach(c=>{
+      if(c.commissions) Object.values(c.commissions).forEach(cm=>{
+        const d = new Date(cm.createdAt);
+        if(d.getMonth()===m && cm.status==='cobrada') commissions+=cm.netAmount||0;
+      });
+    });
+    return {feesCobrados,commissions,payments:monthPayments};
+  }
+  
+  // Month tabs
+  const monthTabs = months.map((m,i)=>'<button class="ftab'+(cashMonth===i?' on':'')+'" onclick="cashMonth='+i+';renderCash()">'+m+'</button>').join('');
+  
+  // View tabs
+  const viewTabs = '<div class="ftabs"><button class="ftab'+(cashView==='mensual'?' on':'')+'" onclick="cashView=\'mensual\';renderCash()">📅 Mensual</button><button class="ftab'+(cashView==='resumen'?' on':'')+'" onclick="cashView=\'resumen\';renderCash()">📊 Resumen anual</button><button class="ftab'+(cashView==='donde'?' on':'')+'" onclick="cashView=\'donde\';renderCash()">📍 Dónde está la plata</button></div>';
+  
+  let content = '';
+  
+  if(cashView==='mensual'){
+    const exp = getMonthExpenses(cashMonth);
+    const inc = getMonthIncome(cashMonth);
+    const neto = inc.feesCobrados + inc.commissions - exp.total;
+    
+    content = '<div class="ftabs" style="margin-top:8px">'+monthTabs+'</div>'+
+      '<div class="kgrid">'+
+        '<div class="kcard"><div class="kl">Ingresos '+months[cashMonth]+'</div><div class="kv" style="color:var(--gn)">$'+(inc.feesCobrados+inc.commissions).toFixed(0)+'</div><div class="ks">Fees $'+inc.feesCobrados.toFixed(0)+' + Com $'+inc.commissions.toFixed(0)+'</div></div>'+
+        '<div class="kcard"><div class="kl">Gastos '+months[cashMonth]+'</div><div class="kv" style="color:var(--rd)">$'+exp.total.toFixed(0)+'</div><div class="ks">'+exp.items.length+' conceptos</div></div>'+
+      '</div>'+
+      '<div class="kcard w" style="margin-bottom:16px"><div class="kl">Resultado '+months[cashMonth]+'</div><div class="kv" style="color:'+(neto>=0?'var(--gn)':'var(--rd)')+'">$'+neto.toFixed(0)+'</div></div>'+
+      '<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:6px">Gastos del mes</div>'+
+      exp.items.map(i=>'<div class="cfrow"><span>'+i.name+'</span><span class="cfval neg">-$'+i.amount.toFixed(2)+'</span></div>').join('')+
+      '<div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total</span><span class="cfval neg">-$'+exp.total.toFixed(2)+'</span></div></div>'+
+      '<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:6px">Ingresos del mes</div>'+
+      (inc.payments.length?inc.payments.map(p=>{
+        const cn=clients[p.clientId]?.name||'—';
+        return '<div class="cfrow"><span>'+cn+'<br><span style="font-size:10px;color:var(--tx3)">'+p.concept+' · '+p.method+'</span></span><span class="cfval '+(p.status==='Cobrado'?'pos':'neg')+'">$'+p.amount.toLocaleString()+'</span></div>';
+      }).join(''):'<div style="font-size:12px;color:var(--tx3);padding:8px">Sin ingresos registrados este mes</div>')+
+      '</div>';
+      
+  } else if(cashView==='resumen'){
+    // Annual P&L
+    let totalIngresos=0,totalGastos=0;
+    let monthlyData = months.map((m,i)=>{
+      const exp=getMonthExpenses(i);
+      const inc=getMonthIncome(i);
+      const ingreso=inc.feesCobrados+inc.commissions;
+      totalIngresos+=ingreso;
+      totalGastos+=exp.total;
+      const neto=ingreso-exp.total;
+      return '<div class="cfrow"><span><b>'+m+'</b></span><span style="font-size:11px;display:flex;gap:12px"><span style="color:var(--gn)">+$'+ingreso.toFixed(0)+'</span><span style="color:var(--rd)">-$'+exp.total.toFixed(0)+'</span><span style="color:'+(neto>=0?'var(--gn)':'var(--rd)')+';font-weight:600">$'+neto.toFixed(0)+'</span></span></div>';
+    }).join('');
+    
+    const ganancia = (allFeesCobrados+allFeesPendientes+allCommCobradas+allCommPendientes) - 3537;
+    
+    content = '<div class="kgrid">'+
+      '<div class="kcard"><div class="kl">Ingresos 2026</div><div class="kv" style="color:var(--gn)">$'+(allFeesCobrados+allFeesPendientes+allCommCobradas+allCommPendientes).toFixed(0)+'</div><div class="ks">Fees $'+(allFeesCobrados+allFeesPendientes).toFixed(0)+' + Com $'+(allCommCobradas+allCommPendientes).toFixed(0)+'</div></div>'+
+      '<div class="kcard"><div class="kl">Gastos 2026</div><div class="kv" style="color:var(--rd)">$3,537</div><div class="ks">Herramientas + Archer + Gonza</div></div>'+
+      '</div>'+
+      '<div class="kcard w" style="margin-bottom:16px"><div class="kl">Ganancia neta proyectada 2026</div><div class="kv" style="color:var(--gn)">+$'+ganancia.toFixed(0)+'</div></div>'+
+      '<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:6px">Mes a mes</div>'+monthlyData+
+      '<div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total</span><span style="font-size:11px;display:flex;gap:12px"><span style="color:var(--gn)">+$'+totalIngresos.toFixed(0)+'</span><span style="color:var(--rd)">-$'+totalGastos.toFixed(0)+'</span><span style="font-weight:600;color:var(--gn)">$'+(totalIngresos-totalGastos).toFixed(0)+'</span></span></div></div>';
+      
+  } else if(cashView==='donde'){
+    content = '<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:8px">🇦🇷 Cuenta Argentina</div>'+
+      '<div class="cfrow"><span>Fees cobrados</span><span class="cfval pos">$'+allFeesCobrados.toLocaleString()+'</span></div>'+
+      '<div class="cfrow"><span>Reembolsos clientes</span><span class="cfval">En cuenta</span></div>'+
+      '<div class="cfrow"><span>Deuda tarjeta crédito AR (Perillo)</span><span class="cfval neg">-$3,847</span></div>'+
+      '<div class="cfrow"><span>Cubierta con reembolso</span><span class="cfval pos">+$4,001</span></div>'+
+      '</div>'+
+      '<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">🇦🇺 Australia</div>'+
+      '<div class="cfrow"><span>Airwallex (STUBA Parrella)</span><span class="cfval pos">$29</span></div>'+
+      '<div class="cfrow"><span>Salió para clientes (ya pagado)</span><span class="cfval neg">-$6,570</span></div>'+
+      '<div class="cfrow"><span>Reembolsado en Argentina</span><span class="cfval">+$6,570 (en AR)</span></div>'+
+      '</div>'+
+      '<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">⏳ Archer Travel (pendiente)</div>'+
+      '<div class="cfrow"><span>Comisiones retenidas</span><span class="cfval" style="color:var(--yw)">~$1,795</span></div>'+
+      '<div class="cfrow"><span>Se libera</span><span class="cfval">Post-checkout (mayo+)</span></div>'+
+      '</div>'+
+      '<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">⚠️ Te deben</div>'+
+      '<div class="cfrow"><span>STUBA (hotel fallido Perillo)</span><span class="cfval" style="color:var(--rd)">$2,717</span></div>'+
+      '<div class="cfrow"><span>Stripe (Perillo, en tránsito)</span><span class="cfval" style="color:var(--yw)">~$2,554</span></div>'+
+      '<div class="cfrow"><span>Fees pendientes clientes</span><span class="cfval" style="color:var(--rd)">$'+allFeesPendientes.toLocaleString()+'</span></div>'+
+      '<div class="cfrow"><span>Comisiones post-viaje</span><span class="cfval" style="color:var(--yw)">$'+allCommPendientes.toFixed(0)+'</span></div>'+
+      '</div>';
+  }
+  
+  document.getElementById('cashArea').innerHTML = viewTabs + content +
+    '<div class="shdr"><h3>Movimientos</h3><div style="display:flex;gap:6px"><button class="btn-add" onclick="exportCommissions()">📊 Exportar</button><button class="btn-add" onclick="openModal(\'addPayment\')">+ Pago</button></div></div>'+
+    (payments.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,10).map(p=>{
+      const cn=clients[p.clientId]?.name||'—';
+      const sc=p.status==='Cobrado'?'pos':'neg';
+      return '<div class="cfrow"><span>'+cn+'<br><span style="font-size:10px;color:var(--tx3)">'+p.concept+' · '+p.method+' · '+(p.date||'')+'</span></span><span class="cfval '+sc+'">$'+p.amount.toLocaleString()+'</span></div>';
+    }).join('')||'<div style="font-size:12px;color:var(--tx3);padding:8px">Sin movimientos</div>');
 }
 
 // ═══════════════════════════════════════════════════════════════
