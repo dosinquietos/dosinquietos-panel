@@ -285,8 +285,20 @@ const NOTIFY_EMAILS = ["viajes@dosinquietos.com"];
 // ═══════════════════════════════════════════════════════════════
 // DATOS BASE
 // ═══════════════════════════════════════════════════════════════
-const LEAD_STAGES = ['Lead','Formulario','Call','Propuesta','Cerrado','Perdido'];
-const STAGE_COLORS = {Lead:'var(--bl)',Formulario:'var(--pp)',Call:'var(--yw)',Propuesta:'var(--or)',Cerrado:'var(--gn)',Perdido:'var(--rd)'};
+const LEAD_STAGES = ['Lead','Formulario','Call agendada','Call realizada','Propuesta','Seguimiento','Cerrado','Perdido'];
+const STAGE_COLORS = {Lead:'var(--bl)',Formulario:'var(--pp)','Call agendada':'var(--yw)','Call realizada':'var(--gold)',Propuesta:'var(--or)',Seguimiento:'var(--pp)',Cerrado:'var(--gn)',Perdido:'var(--rd)'};
+
+const PROVIDERS = [
+  {id:'ratehawk',name:'RateHawk',rate:6,type:'Hoteles',timing:'post'},
+  {id:'stuba',name:'STUBA',rate:14,type:'Hoteles',timing:'upfront'},
+  {id:'bedsonline',name:'Bedsonline/Hotelbeds',rate:0,type:'Hoteles',timing:'upfront'},
+  {id:'viator',name:'Viator',rate:8,type:'Actividades',timing:'post'},
+  {id:'civitatis',name:'Civitatis',rate:10,type:'Actividades',timing:'post'},
+  {id:'expedia',name:'Expedia TAAP',rate:10,archerCut:20,type:'Hoteles',timing:'post'},
+  {id:'12go',name:'12Go Asia',rate:0,type:'Transporte',timing:'post'},
+  {id:'raileurope',name:'Rail Europe',rate:0,type:'Trenes',timing:'post'},
+  {id:'duffel',name:'Duffel',rate:1,flatFee:3,type:'Vuelos',timing:'post'},
+];
 
 const CLIENT_PHASES = [
   {id:'captacion',name:'Captación',icon:'🎯'},
@@ -395,6 +407,7 @@ let pipeFilter = 'Todos';
 let taskCatFilter = 'todos';
 let taskPriFilter = 'todos';
 let contFilter = 'cal';
+let clientFilter = 'activo';
 
 // ═══════════════════════════════════════════════════════════════
 // FIREBASE
@@ -422,6 +435,7 @@ function initFirebase(){
       loadDefaultTemplates();
       loadDefaultTasks();
       loadDefaultClients();
+      loadDefaultLeads();
       save();
     }
     renderCurrent();
@@ -446,6 +460,7 @@ function loadLocal(){
   if(!Object.keys(D.templates).length){loadDefaultTemplates();changed=true;}
   if(!Object.keys(D.tasks).length){loadDefaultTasks();changed=true;}
   if(!Object.keys(D.clients).length){loadDefaultClients();changed=true;}
+  if(!Object.keys(D.leads).length){loadDefaultLeads();changed=true;}
   if(changed) save();
   renderCurrent();
 }
@@ -473,7 +488,7 @@ function loadDefaultTasks(){
     {title:'Mantener buffer USD 500-1000 en wallet Airwallex',cat:'bancos',pri:'yw',notes:'Liquidez para cubrir pagos a proveedores antes del settlement del cliente (T+0 a T+5).'},
     // MARKETING
     {title:'Re-grabar video verificación Google Business Profile',cat:'marketing',pri:'rd',notes:'Video rechazado. Debe ser un solo take 60-90 seg. Imprimir hoja A4 con "Dos Inquietos — Travel Advisory". Mostrar Flood St 18, interior con laptop en dosinquietos.com.'},
-    {title:'Publicar al menos 3 veces por semana en Instagram',cat:'marketing',pri:'rd',notes:'Sin contenido consistente el algoritmo no muestra el perfil. Contenido: destinos, detrás de escena, tips de viaje, cuánto costó mi viaje.'},
+    {title:'Publicar al menos 3 veces por semana en Instagram',cat:'marketing',pri:'rd',recurring:true,notes:'Sin contenido consistente el algoritmo no muestra el perfil. Contenido: destinos, detrás de escena, tips de viaje, cuánto costó mi viaje.'},
     {title:'Pedir reseñas a Marian, Monica y Brenda en Google',cat:'marketing',pri:'rd',notes:'Los tres testimonios del sitio. Pedirles que dejen reseña en Google Business Profile.'},
     {title:'Grabar testimonios en video que mencionen proceso de pago',cat:'marketing',pri:'yw',notes:'Los clientes hablando de cómo fue la experiencia de pago. Genera confianza para nuevos leads.'},
     {title:'Implementar secuencia follow-up D1/3/6/10 en ManyChat',cat:'marketing',pri:'rd',notes:'CUELLO DE BOTELLA CRÍTICO. Mucha gente dice que quiere hablar pero nunca agenda. La secuencia de 4 pasos es la solución.'},
@@ -483,7 +498,7 @@ function loadDefaultTasks(){
     {title:'Crear Reel "Cuánto me costó mi viaje a Italia"',cat:'contenido',pri:'yw',notes:'Mayor engagement del nicho. Formato que trae leads directos.'},
     {title:'Crear carrusel "X cosas que nadie te dice de Tailandia"',cat:'contenido',pri:'yw',notes:'Genera guardados y compartidos. Buen reach orgánico.'},
     {title:'Crear Reel "Antes vs después de contratar una agencia"',cat:'contenido',pri:'yw',notes:'Formato testimonial + educativo. Muestra el valor del servicio.'},
-    {title:'Batch de producción semanal (domingos 2h)',cat:'contenido',pri:'gn',notes:'30 min: 5 ideas + captions. 30 min: 2 carruseles Canva. 60 min: 2-3 Reels CapCut. Programar en Metricool.'},
+    {title:'Batch de producción semanal (domingos 2h)',cat:'contenido',pri:'gn',recurring:true,notes:'30 min: 5 ideas + captions. 30 min: 2 carruseles Canva. 60 min: 2-3 Reels CapCut. Programar en Metricool.'},
     // CREACIÓN DE MARCA
     {title:'Actualizar página Sobre Nosotros',cat:'marca',pri:'yw',notes:'Pendiente según metodología v12.'},
     {title:'Certificación ATAS/ATIA',cat:'marca',pri:'yw',notes:'En proceso. Impacto ALTO en credibilidad.'},
@@ -500,12 +515,12 @@ function loadDefaultTasks(){
     // OPERACIONES
     {title:'Completar TIDS cuando llegue carta de RateHawk',cat:'operaciones',pri:'yw',notes:'Acceso a más proveedores.'},
     {title:'Construir dashboard Firebase con pipeline de leads',cat:'operaciones',pri:'gn',notes:'Ya en desarrollo — este dashboard.'},
-    {title:'Revisar el dashboard cada mañana (5 min)',cat:'operaciones',pri:'rd',notes:'Ver en qué paso está cada cliente, qué vence, qué hay que hacer hoy.'},
-    {title:'Registrar cada nuevo lead en el dashboard',cat:'operaciones',pri:'rd',notes:'Cada consulta se anota. Después de 30 días van a tener datos reales de conversión.'},
+    {title:'Revisar el dashboard cada mañana (5 min)',cat:'operaciones',pri:'rd',recurring:true,notes:'Ver en qué paso está cada cliente, qué vence, qué hay que hacer hoy.'},
+    {title:'Registrar cada nuevo lead en el dashboard',cat:'operaciones',pri:'rd',recurring:true,notes:'Cada consulta se anota. Después de 30 días van a tener datos reales de conversión.'},
     // CLIENTE
     {title:'Seguir el checklist de pasos para cada cliente nuevo',cat:'cliente',pri:'rd',notes:'Cada cliente entra en el dashboard. Cada paso se marca. No saltear pasos.'},
-    {title:'Mandar pedido de reseña 3 días post-viaje a cada cliente',cat:'cliente',pri:'yw',notes:'Sistemáticamente. Usar la plantilla de pedido de testimonio.'},
-    {title:'Cargar cada reserva confirmada en Drive del cliente',cat:'cliente',pri:'yw',notes:'Cada voucher, confirmación, pasaje tiene que estar en la carpeta del cliente en Drive.'},
+    {title:'Mandar pedido de reseña 3 días post-viaje a cada cliente',cat:'cliente',pri:'yw',recurring:true,notes:'Sistemáticamente. Usar la plantilla de pedido de testimonio.'},
+    {title:'Cargar cada reserva confirmada en Drive del cliente',cat:'cliente',pri:'yw',recurring:true,notes:'Cada voucher, confirmación, pasaje tiene que estar en la carpeta del cliente en Drive.'},
     // WEB
     {title:'Mostrar destinos y precio arriba del fold (hero section)',cat:'web',pri:'rd',notes:'La web no muestra qué destinos ni rangos de precio en la parte visible. Impacto directo en conversión.'},
     {title:'Agregar CTA directo a WhatsApp con mensaje pre-cargado',cat:'web',pri:'rd',notes:'Botón que abra WhatsApp con texto pre-armado. Reduce fricción de contacto.'},
@@ -530,25 +545,26 @@ function loadDefaultClients(){
     return s;
   };
   const clients = [
-    {id:'c_nicolino',name:'Nicolino',dest:'Sudeste Asiático',fee:350,feeCobrado:350,feePendiente:0,comision:240.11,travelers:2,notes:'Fee 100% cobrado. Comisiones Expedia $213.82 + Civitatis $86.32. Total facturado $590.'},
-    {id:'c_maxi',name:'Maxi',dest:'',fee:150,feeCobrado:150,feePendiente:0,comision:232,travelers:2,notes:'Fee 100% cobrado. Comisiones Expedia $290. Cobrado comisiones $240.27. Total $382.'},
-    {id:'c_iaia',name:'Iaia',dest:'',fee:150,feeCobrado:150,feePendiente:0,comision:143.20,travelers:2,notes:'Fee 100% cobrado. Comisiones Expedia $179.99. Total $293.20.'},
-    {id:'c_gasperin',name:'Gasperin',dest:'',fee:0,feeCobrado:0,feePendiente:0,comision:477.41,travelers:2,notes:'Sin fee cobrado. Comisiones Expedia $596.76. Comisión cargada $477.41. Total $477.41.'},
-    {id:'c_sarr',name:'Sarr',dest:'',fee:150,feeCobrado:150,feePendiente:0,comision:110.40,travelers:2,notes:'Fee 100% cobrado. Comisiones Expedia $137.47 + Civitatis $5.40. Cobrado comisiones $114.72. Total $260.40.'},
-    {id:'c_bottos',name:'Bottos',dest:'',fee:350,feeCobrado:175,feePendiente:175,comision:266.40,travelers:2,notes:'⚠️ Fee 50% PENDIENTE ($175). Comisiones Expedia $333 + Civitatis $72. Total proyectado $683.'},
-    {id:'c_maria',name:'María',dest:'',fee:150,feeCobrado:75,feePendiente:75,comision:384,travelers:2,notes:'⚠️ Fee 50% PENDIENTE ($75). Comisiones Expedia $499.90. Total proyectado $649.90.'},
-    {id:'c_manfroi',name:'Manfroi',dest:'',fee:800,feeCobrado:400,feePendiente:400,comision:0,travelers:2,notes:'⚠️ Fee 50% PENDIENTE ($400). Sin comisiones aún. Total proyectado $800.'},
-    {id:'c_perillo',name:'Perillo',dest:'',fee:700,feeCobrado:350,feePendiente:350,comision:0,travelers:2,notes:'⚠️ Fee 50% PENDIENTE ($350). Sin comisiones aún. Total proyectado $700.'},
-    {id:'c_parrella',name:'Parrella',dest:'',fee:300,feeCobrado:150,feePendiente:150,comision:0,travelers:2,notes:'⚠️ Fee 50% PENDIENTE ($150). Comisiones RateHawk $84.34 + STUBA $28.97. Cobrado STUBA $28.97. Total $300.'},
-    {id:'c_belen',name:'Belén',dest:'',fee:440,feeCobrado:0,feePendiente:440,comision:0,travelers:2,notes:'🔴 Fee 100% PENDIENTE ($440). Sin comisiones. Total proyectado $440.'},
+    {id:'c_nicolino',name:'Nicolino',dest:'Sudeste Asiático',fee:350,feeCobrado:350,feePendiente:0,comision:240.11,travelers:2,status:'finalizado',notes:'Fee 100% cobrado. Comisiones Expedia $213.82 + Civitatis $86.32. Total facturado $590.'},
+    {id:'c_maxi',name:'Maxi',dest:'',fee:150,feeCobrado:150,feePendiente:0,comision:232,travelers:2,status:'finalizado',notes:'Fee 100% cobrado. Comisiones Expedia $290. Cobrado comisiones $240.27. Total $382.'},
+    {id:'c_iaia',name:'Iaia',dest:'',fee:150,feeCobrado:150,feePendiente:0,comision:143.20,travelers:2,status:'finalizado',notes:'Fee 100% cobrado. Comisiones Expedia $179.99. Total $293.20.'},
+    {id:'c_gasperin',name:'Gasperin',dest:'',fee:0,feeCobrado:0,feePendiente:0,comision:477.41,travelers:2,status:'activo',notes:'Sin fee cobrado. Comisiones Expedia $596.76. Comisión cargada $477.41. Total $477.41.'},
+    {id:'c_sarr',name:'Sarr',dest:'',fee:150,feeCobrado:150,feePendiente:0,comision:110.40,travelers:2,status:'finalizado',notes:'Fee 100% cobrado. Comisiones Expedia $137.47 + Civitatis $5.40. Cobrado comisiones $114.72. Total $260.40.'},
+    {id:'c_bottos',name:'Bottos',dest:'',fee:350,feeCobrado:175,feePendiente:175,comision:266.40,travelers:2,status:'activo',notes:'⚠️ Fee 50% PENDIENTE ($175). Comisiones Expedia $333 + Civitatis $72. Total proyectado $683.'},
+    {id:'c_maria',name:'María',dest:'',fee:150,feeCobrado:75,feePendiente:75,comision:384,travelers:2,status:'activo',notes:'⚠️ Fee 50% PENDIENTE ($75). Comisiones Expedia $499.90. Total proyectado $649.90.'},
+    {id:'c_manfroi',name:'Manfroi',dest:'',fee:800,feeCobrado:400,feePendiente:400,comision:0,travelers:2,status:'activo',notes:'⚠️ Fee 50% PENDIENTE ($400). Sin comisiones aún. Total proyectado $800.'},
+    {id:'c_perillo',name:'Perillo',dest:'',fee:700,feeCobrado:350,feePendiente:350,comision:0,travelers:2,status:'activo',notes:'⚠️ Fee 50% PENDIENTE ($350). Sin comisiones aún. Total proyectado $700.'},
+    {id:'c_parrella',name:'Parrella',dest:'',fee:300,feeCobrado:150,feePendiente:150,comision:0,travelers:2,status:'activo',notes:'⚠️ Fee 50% PENDIENTE ($150). Comisiones RateHawk $84.34 + STUBA $28.97. Cobrado STUBA $28.97. Total $300.'},
+    {id:'c_belen',name:'Belén',dest:'',fee:440,feeCobrado:0,feePendiente:440,comision:0,travelers:2,status:'activo',notes:'🔴 Fee 100% PENDIENTE ($440). Sin comisiones. Total proyectado $440.'},
   ];
   clients.forEach((c,i) => {
-    const doneSteps = c.feeCobrado > 0 && c.feePendiente === 0 ? 20 : c.feeCobrado > 0 ? 10 : 3;
+    const doneSteps = c.status==='finalizado' ? 46 : c.feeCobrado > 0 && c.feePendiente === 0 ? 20 : c.feeCobrado > 0 ? 10 : 3;
     D.clients[c.id] = {
       name:c.name, email:'', phone:'', dest:c.dest,
       canal:'', ref:'', budget:'', travelers:c.travelers,
       notes:c.notes, steps:mkSteps(doneSteps), tasks:{},
       valorViaje:0, fee:c.fee, comision:c.comision,
+      status:c.status||'activo',
       fechaViaje:'', createdAt:Date.now()+i
     };
   });
@@ -575,6 +591,19 @@ function loadDefaultClients(){
   });
 }
 
+function loadDefaultLeads(){
+  const leads = [
+    {name:'Fabián Varela',email:'tetelboim2002@yahoo.com',phone:'541158212565',dest:'Tailandia, Malasia, Singapur',canal:'Instagram',stage:'Lead',ref:'',budget:'USD 2.500–4.000',travelers:2,notes:'Pareja. Bangkok, Chiang Rai (no Chiang Mai), Krabi, Phi Phi, Kuala Lumpur. Enero 2027.',createdAt:new Date('2026-04-05T08:49:30').getTime()},
+    {name:'Marisol Shanahan',email:'marushanahan@gmail.com',phone:'5492478440182',dest:'Italia / Irlanda / Inglaterra',canal:'Instagram',stage:'Lead',ref:'',budget:'Más de USD 4.000',travelers:2,notes:'Familia. Roma (Vaticano, Coliseo), Costa. Sep 2027.',createdAt:new Date('2026-04-06T00:09:42').getTime()},
+    {name:'Grisel Fernández',email:'griselfernandezn@gmail.com',phone:'542342509511',dest:'Tailandia',canal:'Instagram',stage:'Lead',ref:'',budget:'Prefiero que lo veamos juntos',travelers:2,notes:'2 amigos. Bangkok, Chiang Mai, Chiang Rai, islas (Krabi, Phuket). Dic 2026 - Ene 2027.',createdAt:new Date('2026-04-06T12:07:49').getTime()},
+    {name:'Cabrera Brenda',email:'brencabrera93@gmail.com',phone:'3415152364',dest:'Tailandia e Indonesia',canal:'Instagram',stage:'Lead',ref:'',budget:'USD 2.500–4.000',travelers:2,notes:'2 amigos. Nov-Dic 2026.',createdAt:new Date('2026-04-06T15:27:45').getTime()},
+    {name:'Florencia Trey',email:'florenciatrey95@gmail.com',phone:'3534451130',dest:'Tailandia, Vietnam',canal:'Instagram',stage:'Call realizada',ref:'',budget:'Prefiero que lo veamos juntos',travelers:2,notes:'Pareja. Templo Blanco, santuario de elefantes, islas. Ya tuvo videollamada.',createdAt:new Date('2026-03-30T15:05:00').getTime(),contactedAt:new Date('2026-04-07').getTime()},
+  ];
+  leads.forEach((l,i) => {
+    D.leads['lead_'+i] = {...l, contactedAt:null};
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════
 // AUTH
 // ═══════════════════════════════════════════════════════════════
@@ -584,6 +613,7 @@ function tryLogin(){
     sessionStorage.setItem('di-auth','1');
     document.getElementById('loginScreen').style.display='none';
     document.getElementById('app').classList.add('on');
+    requestNotifPermission();
     initFirebase();
   } else {
     const err = document.getElementById('loginErr');
@@ -591,11 +621,40 @@ function tryLogin(){
     document.getElementById('loginPw').value='';
   }
 }
+
+function requestNotifPermission(){
+  if('Notification' in window && Notification.permission==='default'){
+    Notification.requestPermission();
+  }
+}
+
+function sendBrowserNotif(title, body){
+  if('Notification' in window && Notification.permission==='granted'){
+    try{ new Notification(title, {body, icon:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">✈️</text></svg>'}); }catch(e){}
+  }
+}
+
+function checkAndNotify(){
+  const alerts = getAlerts();
+  const urgent = alerts.filter(a=>a.type==='rd');
+  if(urgent.length>0){
+    const notifKey = 'di-notif-'+new Date().toDateString();
+    if(!sessionStorage.getItem(notifKey)){
+      sessionStorage.setItem(notifKey,'1');
+      if(urgent.length===1){
+        sendBrowserNotif('🔴 Dos Inquietos',urgent[0].title);
+      } else {
+        sendBrowserNotif('🔴 '+urgent.length+' alertas urgentes','Abrí el panel para ver los detalles');
+      }
+    }
+  }
+}
 function logout(){sessionStorage.removeItem('di-auth');location.reload()}
 document.getElementById('loginPw').addEventListener('keydown',e=>{if(e.key==='Enter')tryLogin()});
 if(sessionStorage.getItem('di-auth')){
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('app').classList.add('on');
+  requestNotifPermission();
   setTimeout(initFirebase,100);
 }
 
@@ -639,6 +698,7 @@ function renderCurrent(){
     case 'alertas': renderAlertas(); break;
   }
   updateAlertBadge();
+  checkAndNotify();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -681,7 +741,7 @@ function openModal(type, data){
       <div class="fg"><label>Destino</label><input id="ml-dest" placeholder="Ej: Italia 14 días"></div>
       <div class="frow">
         <div class="fg"><label>Canal</label><select id="ml-canal"><option>Instagram</option><option>Referido</option><option>Google</option><option>Web orgánico</option><option>Otro</option></select></div>
-        <div class="fg"><label>Etapa</label><select id="ml-stage">${LEAD_STAGES.slice(0,4).map(s=>'<option>'+s+'</option>').join('')}</select></div>
+        <div class="fg"><label>Etapa</label><select id="ml-stage">${LEAD_STAGES.slice(0,6).map(s=>'<option>'+s+'</option>').join('')}</select></div>
       </div>
       <div class="fg"><label>Ref. contenido (Reel/Post)</label><input id="ml-ref" placeholder="Ej: reel_tailandia_abril"></div>
       <div class="frow">
@@ -725,7 +785,10 @@ function openModal(type, data){
         <div class="fg"><label>Categoría</label><select id="mt-cat">${catOpts}</select></div>
         <div class="fg"><label>Prioridad</label><select id="mt-pri"><option value="rd">🔴 Alta</option><option value="yw" selected>🟡 Media</option><option value="gn">🟢 Baja</option></select></div>
       </div>
-      <div class="fg"><label>Fecha límite</label><input id="mt-deadline" type="date"></div>
+      <div class="frow">
+        <div class="fg"><label>Fecha límite</label><input id="mt-deadline" type="date"></div>
+        <div class="fg"><label>Tipo</label><select id="mt-recurring"><option value="once">Una vez</option><option value="recurring">🔄 Repetitiva</option></select></div>
+      </div>
       <div class="fg"><label>Notas</label><textarea id="mt-notes" placeholder="Detalles..."></textarea></div>
       <button class="btn1" onclick="saveTask()">Guardar tarea</button>
       <button class="btn2" onclick="closeModal()">Cancelar</button>`;
@@ -834,6 +897,7 @@ function convertToClient(leadId){
     canal:l.canal, ref:l.ref, budget:l.budget, travelers:l.travelers,
     notes:l.notes||'', steps, tasks:{},
     valorViaje:0, fee:0, comision:0,
+    status:'activo',
     fechaViaje:'', createdAt:Date.now(), fromLead:leadId
   };
   l.stage = 'Cerrado';
@@ -852,6 +916,7 @@ function saveTask(){
     pri:document.getElementById('mt-pri').value,
     deadline:document.getElementById('mt-deadline').value||null,
     notes:document.getElementById('mt-notes').value,
+    recurring:document.getElementById('mt-recurring').value==='recurring',
     done:false, createdAt:Date.now()
   };
   save(); closeModal(); showNotif('Tarea creada ✓');
@@ -859,9 +924,21 @@ function saveTask(){
 }
 
 function toggleTask(id){
-  D.tasks[id].done = !D.tasks[id].done;
+  const t = D.tasks[id];
+  if(!t.done && t.recurring){
+    const next = prompt('🔄 Tarea repetitiva completada.\n¿Cuándo es la próxima? (YYYY-MM-DD)');
+    if(next){
+      t.done = true;
+      const newId = uid();
+      D.tasks[newId] = {title:t.title,cat:t.cat,pri:t.pri,deadline:next,notes:t.notes,recurring:true,done:false,createdAt:Date.now()};
+      save(); renderCurrent();
+      showNotif('✅ Completada. Nueva creada para '+next);
+      return;
+    }
+  }
+  t.done = !t.done;
   save(); renderCurrent();
-  showNotif(D.tasks[id].done?'✅ Completada':'↩ Desmarcada');
+  showNotif(t.done?'✅ Completada':'↩ Desmarcada');
 }
 
 function deleteTask(id){
@@ -960,9 +1037,9 @@ function renderInicio(){
     ${canalHTML?'<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:6px">Conversión por canal</div>'+canalHTML+'</div>':''}`;
   
   // Funnel
-  const funnelHTML = LEAD_STAGES.slice(0,5).map(stage=>{
+  const funnelHTML = LEAD_STAGES.slice(0,7).map(stage=>{
     const count = stage==='Cerrado' ? leads.filter(l=>l.stage==='Cerrado').length + clients.length : leads.filter(l=>l.stage===stage).length;
-    const maxW = Math.max(...LEAD_STAGES.slice(0,5).map(s=>leads.filter(l=>l.stage===s).length),1);
+    const maxW = Math.max(...LEAD_STAGES.slice(0,7).map(s=>leads.filter(l=>l.stage===s).length),1);
     const pct = Math.max(Math.round(count/Math.max(totalLeads,1)*100),count?8:0);
     return `<div class="fbar"><div class="fbar-top"><span>${stage}</span><span>${count}</span></div><div class="fbar-track"><div class="fbar-fill" style="width:${pct}%;background:${STAGE_COLORS[stage]}">${count}</div></div></div>`;
   }).join('');
@@ -1041,21 +1118,46 @@ function showLeadDetail(id){
 // RENDER: CLIENTES
 // ═══════════════════════════════════════════════════════════════
 function renderClientes(){
-  const clients = Object.entries(D.clients).map(([id,c])=>({...c,_id:id}));
-  if(!clients.length){
-    document.getElementById('clientesArea').innerHTML = '<div class="empty"><div class="em">🌍</div><p>Sin clientes activos.<br>Cerrá un lead del Pipeline para crear uno.</p></div>';
+  const allClients = Object.entries(D.clients).map(([id,c])=>({...c,_id:id}));
+  const counts = {
+    activo: allClients.filter(c=>(c.status||'activo')==='activo').length,
+    viajando: allClients.filter(c=>c.status==='viajando').length,
+    finalizado: allClients.filter(c=>c.status==='finalizado').length,
+  };
+  
+  const tabs = [
+    {id:'activo',name:'🟢 Activos ('+counts.activo+')'},
+    {id:'viajando',name:'✈️ Viajando ('+counts.viajando+')'},
+    {id:'finalizado',name:'✅ Finalizados ('+counts.finalizado+')'},
+  ];
+  
+  let clients = allClients.filter(c=>(c.status||'activo')===clientFilter);
+  
+  if(!allClients.length){
+    document.getElementById('clientesArea').innerHTML = '<div class="empty"><div class="em">🌍</div><p>Sin clientes.<br>Cerrá un lead del Pipeline para crear uno.</p></div>';
     return;
   }
-  document.getElementById('clientesArea').innerHTML = clients.map(c=>{
-    const steps = c.steps ? Object.values(c.steps) : [];
-    const done = steps.filter(s=>s.done).length;
-    const pct = steps.length ? Math.round(done/steps.length*100) : 0;
-    return `<div class="lcard" onclick="showClientDetail('${c._id}')">
-      <div class="lcard-top"><div><div class="lcard-name">${c.name}</div><div class="lcard-dest">${c.dest||'—'} · ${c.travelers||'?'} pax</div></div><span class="tag t-gold">${pct}%</span></div>
-      <div class="pbar"><div class="pfill" style="width:${pct}%"></div></div>
-      <div style="font-size:10px;color:var(--tx3);margin-top:4px">${done}/${steps.length} pasos · ${c.canal||''}</div>
-    </div>`;
-  }).join('');
+  
+  const getPendiente = (c) => {
+    const pays = Object.values(D.payments).filter(p=>p.clientId===c._id);
+    return pays.filter(p=>p.status==='Pendiente').reduce((a,p)=>a+p.amount,0);
+  };
+  
+  document.getElementById('clientesArea').innerHTML = 
+    '<div class="ftabs">'+tabs.map(t=>'<button class="ftab'+(clientFilter===t.id?' on':'')+'" onclick="clientFilter=\''+t.id+'\';renderClientes()">'+t.name+'</button>').join('')+'</div>' +
+    (clients.length ? clients.map(c=>{
+      const steps = c.steps ? Object.values(c.steps) : [];
+      const done = steps.filter(s=>s.done).length;
+      const pct = steps.length ? Math.round(done/steps.length*100) : 0;
+      const pendiente = getPendiente(c);
+      const pendTag = pendiente > 0 ? '<span class="tag t-rd">⚠️ Debe $'+pendiente.toLocaleString()+'</span>' : '';
+      const statusIcon = c.status==='viajando'?'✈️':c.status==='finalizado'?'✅':'🟢';
+      return '<div class="lcard" onclick="showClientDetail(\''+c._id+'\')">'+
+        '<div class="lcard-top"><div><div class="lcard-name">'+statusIcon+' '+c.name+'</div><div class="lcard-dest">'+(c.dest||'—')+' · '+(c.travelers||'?')+' pax</div></div><span class="tag t-gold">'+pct+'%</span></div>'+
+        '<div class="pbar"><div class="pfill" style="width:'+pct+'%"></div></div>'+
+        '<div class="lcard-bottom" style="margin-top:6px">'+pendTag+'<span style="font-size:10px;color:var(--tx3)">'+done+'/'+steps.length+' pasos · '+(c.canal||'')+'</span></div>'+
+      '</div>';
+    }).join('') : '<div class="empty"><div class="em">'+(clientFilter==='activo'?'🟢':clientFilter==='viajando'?'✈️':'✅')+'</div><p>Sin clientes en esta categoría</p></div>');
 }
 
 function showClientDetail(id){
@@ -1094,10 +1196,18 @@ function showClientDetail(id){
     <button class="back" onclick="go('clientes')">← Clientes</button>
     <div class="lcard" style="cursor:default">
       <div class="lcard-name" style="font-size:18px;margin-bottom:4px">${c.name}</div>
-      <div style="font-size:12px;color:var(--tx2);margin-bottom:8px">${c.dest} · ${c.travelers||'?'} pax · ${c.canal||''}</div>
+      <div style="font-size:12px;color:var(--tx2);margin-bottom:8px">${c.dest||'—'} · ${c.travelers||'?'} pax · ${c.canal||''}</div>
+      <div class="fg" style="margin-bottom:8px"><label>Estado del cliente</label>
+        <select onchange="D.clients['${id}'].status=this.value;save();showNotif('Estado actualizado ✓')">
+          <option value="activo"${(c.status||'activo')==='activo'?' selected':''}>🟢 Activo (armando viaje)</option>
+          <option value="viajando"${c.status==='viajando'?' selected':''}>✈️ Viajando</option>
+          <option value="finalizado"${c.status==='finalizado'?' selected':''}>✅ Finalizado (ya viajó)</option>
+        </select>
+      </div>
       <div class="pbar"><div class="pfill" style="width:${pct}%"></div></div>
       <div style="font-size:11px;color:var(--tx3);margin-top:4px">${done}/${steps.length} pasos (${pct}%)</div>
     </div>
+    ${(()=>{const pend=Object.values(D.payments).filter(p=>p.clientId===id&&p.status==='Pendiente');const total=pend.reduce((a,p)=>a+p.amount,0);return total>0?'<div class="alcard rd"><div class="al-t">⚠️ Cobro pendiente: $'+total.toLocaleString()+'</div><div class="al-d">'+pend.map(p=>p.concept+' $'+p.amount).join(' · ')+'</div></div>':'';})()}
     
     <div class="shdr"><h3>Checklist del viaje</h3></div>
     ${phasesHTML}
@@ -1112,9 +1222,25 @@ function showClientDetail(id){
     <div class="lcard" style="cursor:default">
       <div class="cfrow"><span>Valor viaje</span><input type="number" style="width:100px;padding:4px 8px;background:var(--s2);border:1px solid var(--bdr);border-radius:4px;color:var(--tx);font-size:13px;text-align:right" value="${c.valorViaje||0}" onchange="D.clients['${id}'].valorViaje=parseFloat(this.value)||0;save()"></div>
       <div class="cfrow"><span>Fee asesoría</span><input type="number" style="width:100px;padding:4px 8px;background:var(--s2);border:1px solid var(--bdr);border-radius:4px;color:var(--tx);font-size:13px;text-align:right" value="${c.fee||0}" onchange="D.clients['${id}'].fee=parseFloat(this.value)||0;save()"></div>
-      <div class="cfrow"><span>Comisión est.</span><input type="number" style="width:100px;padding:4px 8px;background:var(--s2);border:1px solid var(--bdr);border-radius:4px;color:var(--tx);font-size:13px;text-align:right" value="${c.comision||0}" onchange="D.clients['${id}'].comision=parseFloat(this.value)||0;save()"></div>
       <div class="cfrow"><span>Fecha viaje</span><input type="date" style="padding:4px 8px;background:var(--s2);border:1px solid var(--bdr);border-radius:4px;color:var(--tx);font-size:13px" value="${c.fechaViaje||''}" onchange="D.clients['${id}'].fechaViaje=this.value;save()"></div>
     </div>
+    
+    <div class="shdr"><h3>Comisiones por proveedor</h3><button class="btn-add" onclick="addClientCommission('${id}')">+ Comisión</button></div>
+    ${(()=>{
+      const comms = c.commissions ? Object.entries(c.commissions) : [];
+      const totalComm = comms.reduce((a,[k,cm])=>a+(cm.netAmount||0),0);
+      const totalCobrada = comms.filter(([k,cm])=>cm.status==='cobrada').reduce((a,[k,cm])=>a+(cm.netAmount||0),0);
+      const totalPendiente = comms.filter(([k,cm])=>cm.status!=='cobrada').reduce((a,[k,cm])=>a+(cm.netAmount||0),0);
+      let html = comms.map(([k,cm])=>{
+        const prov = PROVIDERS.find(p=>p.id===cm.provider)||{name:cm.provider};
+        const statusIcon = cm.status==='cobrada'?'💰':'⏳';
+        const statusColor = cm.status==='cobrada'?'var(--gn)':'var(--yw)';
+        return '<div class="cfrow" style="cursor:pointer" onclick="toggleCommStatus(\''+id+'\',\''+k+'\')"><span>'+(cm.name||'—')+'<br><span style="font-size:10px;color:var(--tx3)">'+prov.name+' · $'+cm.bookingAmount+' → '+(cm.rateUsed||0)+'%'+(cm.archerCut?' (-'+cm.archerCut+'% Archer)':'')+'</span><br><span style="font-size:10px;color:'+statusColor+'">'+statusIcon+' '+(cm.status==='cobrada'?'Cobrada':'Pendiente post-viaje')+' (tocar para cambiar)</span></span><span class="cfval pos">$'+cm.netAmount.toFixed(2)+'</span></div>';
+      }).join('');
+      if(comms.length) html += '<div style="background:var(--s2);border-radius:8px;padding:10px;margin-top:6px"><div class="cfrow"><span>💰 Comisiones cobradas</span><span class="cfval pos">$'+totalCobrada.toFixed(2)+'</span></div><div class="cfrow"><span>⏳ Pendientes post-viaje</span><span class="cfval" style="color:var(--yw)">$'+totalPendiente.toFixed(2)+'</span></div><div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total comisiones</span><span class="cfval pos" style="font-size:16px">$'+totalComm.toFixed(2)+'</span></div></div>';
+      return html||'<div style="font-size:12px;color:var(--tx3);padding:8px">Sin comisiones cargadas</div>';
+    })()}
+    
     ${c.phone?'<a href="https://wa.me/'+c.phone.replace(/[^0-9]/g,'')+'" target="_blank"><button class="btn2" style="color:var(--gn)">💬 WhatsApp</button></a>':''}`;
 }
 
@@ -1140,6 +1266,109 @@ function toggleClientTask(clientId, taskId){
   save(); showClientDetail(clientId);
 }
 
+function addClientCommission(clientId){
+  const provOpts = PROVIDERS.map(p=>'<option value="'+p.id+'">'+p.name+' ('+p.type+')</option>').join('');
+  const m = document.getElementById('modalContent');
+  m.innerHTML=`<h3>Agregar comisión</h3>
+    <div class="fg"><label>Nombre de la reserva</label><input id="mc-name" placeholder="Ej: Hotel Roma, Tour Coliseo, Vuelo FCO-CDG"></div>
+    <div class="fg"><label>Proveedor</label><select id="mc-prov" onchange="calcCommPreview()">${provOpts}<option value="manual">✏️ Monto manual</option></select></div>
+    <div class="fg"><label>Monto de la reserva (USD)</label><input id="mc-booking" type="number" step="0.01" placeholder="500.00" oninput="calcCommPreview()"></div>
+    <div id="mc-preview" style="padding:10px;background:var(--s2);border-radius:8px;margin-bottom:12px;font-size:13px;color:var(--tx2)">Seleccioná proveedor y monto</div>
+    <div class="fg" id="mc-manual-wrap" style="display:none"><label>Monto comisión manual (USD)</label><input id="mc-manual-amount" type="number" step="0.01" placeholder="0.00"></div>
+    <button class="btn1" onclick="saveClientCommission('${clientId}')">Guardar comisión</button>
+    <button class="btn2" onclick="closeModal()">Cancelar</button>`;
+  document.getElementById('modalBg').classList.add('on');
+}
+
+function calcCommPreview(){
+  const provId = document.getElementById('mc-prov').value;
+  const booking = parseFloat(document.getElementById('mc-booking').value)||0;
+  const preview = document.getElementById('mc-preview');
+  const manualWrap = document.getElementById('mc-manual-wrap');
+  if(provId==='manual'){
+    manualWrap.style.display='block';
+    preview.innerHTML='✏️ Ingresá el monto de comisión manualmente';
+    return;
+  }
+  manualWrap.style.display='none';
+  const prov = PROVIDERS.find(p=>p.id===provId);
+  if(!prov||!booking){preview.innerHTML='Ingresá el monto de la reserva';return;}
+  let gross,net,info='';
+  if(prov.flatFee){
+    gross = booking*(prov.rate/100)+prov.flatFee;
+    net = gross;
+    info = prov.rate+'% + $'+prov.flatFee+' fijo';
+  } else {
+    gross = booking*(prov.rate/100);
+    net = gross;
+    info = prov.rate+'% bruto';
+    if(prov.archerCut){
+      net = gross*(1-prov.archerCut/100);
+      info += ' → -'+prov.archerCut+'% Archer = '+((prov.rate)*(1-prov.archerCut/100)).toFixed(1)+'% neto';
+    }
+  }
+  preview.innerHTML='💰 Comisión bruta: <b>$'+gross.toFixed(2)+'</b><br>'+
+    (prov.archerCut?'🏢 Después de Archer: <b style="color:var(--gn)">$'+net.toFixed(2)+'</b><br>':'')+
+    '📊 '+info;
+}
+
+function saveClientCommission(clientId){
+  const provId = document.getElementById('mc-prov').value;
+  const booking = parseFloat(document.getElementById('mc-booking').value)||0;
+  if(!booking&&provId!=='manual'){showNotif('Ingresá el monto');return;}
+  let netAmount,rateUsed,archerCut=0;
+  if(provId==='manual'){
+    netAmount = parseFloat(document.getElementById('mc-manual-amount').value)||0;
+    if(!netAmount){showNotif('Ingresá el monto');return;}
+    rateUsed = 0;
+  } else {
+    const prov = PROVIDERS.find(p=>p.id===provId);
+    let gross = prov.flatFee ? booking*(prov.rate/100)+prov.flatFee : booking*(prov.rate/100);
+    netAmount = prov.archerCut ? gross*(1-prov.archerCut/100) : gross;
+    rateUsed = prov.rate;
+    archerCut = prov.archerCut||0;
+  }
+  if(!D.clients[clientId].commissions) D.clients[clientId].commissions={};
+  const resName = document.getElementById('mc-name').value.trim()||'Sin nombre';
+  const prov = PROVIDERS.find(p=>p.id===provId);
+  const commStatus = provId==='manual' ? 'pendiente' : (prov&&prov.timing==='upfront' ? 'cobrada' : 'pendiente');
+  D.clients[clientId].commissions[uid()] = {name:resName,provider:provId,bookingAmount:booking,netAmount,rateUsed,archerCut,status:commStatus,createdAt:Date.now()};
+  save();closeModal();showClientDetail(clientId);
+  showNotif('Comisión $'+netAmount.toFixed(2)+' — '+resName+' ✓');
+}
+
+function toggleCommStatus(clientId, commKey){
+  const cm = D.clients[clientId].commissions[commKey];
+  cm.status = cm.status==='cobrada' ? 'pendiente' : 'cobrada';
+  save(); showClientDetail(clientId);
+  showNotif(cm.status==='cobrada'?'💰 Comisión marcada como cobrada':'⏳ Comisión marcada como pendiente');
+}
+
+// Export Excel
+function exportCommissions(){
+  let csv = 'Cliente,Reserva,Proveedor,Monto Reserva,Tasa,Archer %,Comision Neta,Estado,Fecha\\n';
+  Object.entries(D.clients).forEach(([cid,c])=>{
+    if(c.commissions){
+      Object.values(c.commissions).forEach(cm=>{
+        const prov = PROVIDERS.find(p=>p.id===cm.provider)||{name:cm.provider};
+        csv += '"'+c.name+'","'+(cm.name||'—')+'","'+prov.name+'",'+cm.bookingAmount+','+cm.rateUsed+'%,'+cm.archerCut+'%,'+cm.netAmount.toFixed(2)+',"'+(cm.status==='cobrada'?'Cobrada':'Pendiente')+'",'+new Date(cm.createdAt).toISOString().slice(0,10)+'\\n';
+      });
+    }
+  });
+  // Add payments
+  csv += '\\n\\nCliente,Concepto,Monto,Metodo,Estado,Fecha\\n';
+  Object.values(D.payments).forEach(p=>{
+    const cn = D.clients[p.clientId]?.name||'—';
+    csv += '"'+cn+'","'+p.concept+'",'+p.amount+',"'+p.method+'","'+p.status+'","'+(p.date||'')+'\"\\n';
+  });
+  const blob = new Blob([csv],{type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'comisiones_dosinquietos_'+new Date().toISOString().slice(0,7)+'.csv';
+  a.click();
+  showNotif('📊 Archivo exportado ✓');
+}
+
 // ═══════════════════════════════════════════════════════════════
 // RENDER: CASHFLOW
 // ═══════════════════════════════════════════════════════════════
@@ -1151,8 +1380,19 @@ function renderCash(){
   const pendiente = payments.filter(p=>p.status==='Pendiente').reduce((a,p)=>a+p.amount,0);
   const settlement = payments.filter(p=>p.status==='En settlement').reduce((a,p)=>a+p.amount,0);
   const totalFees = Object.values(clients).reduce((a,c)=>a+(c.fee||0),0);
-  const totalComisiones = Object.values(clients).reduce((a,c)=>a+(c.comision||0),0);
   const totalViajes = Object.values(clients).reduce((a,c)=>a+(c.valorViaje||0),0);
+  
+  // Commission breakdown from client commissions
+  let commCobradas = 0, commPendientes = 0;
+  Object.values(clients).forEach(c=>{
+    if(c.commissions){
+      Object.values(c.commissions).forEach(cm=>{
+        if(cm.status==='cobrada') commCobradas += cm.netAmount||0;
+        else commPendientes += cm.netAmount||0;
+      });
+    }
+  });
+  const totalComisiones = commCobradas + commPendientes;
   
   let paymentsHTML = payments.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).map(p=>{
     const clientName = clients[p.clientId]?.name || '—';
@@ -1162,18 +1402,20 @@ function renderCash(){
   
   document.getElementById('cashArea').innerHTML = `
     <div class="kgrid">
-      <div class="kcard"><div class="kl">Cobrado</div><div class="kv" style="color:var(--gn)">$${cobrado.toLocaleString()}</div></div>
-      <div class="kcard"><div class="kl">Pendiente</div><div class="kv" style="color:var(--rd)">$${pendiente.toLocaleString()}</div></div>
-      <div class="kcard"><div class="kl">En settlement</div><div class="kv" style="color:var(--yw)">$${settlement.toLocaleString()}</div></div>
-      <div class="kcard"><div class="kl">Vol. gestionado</div><div class="kv">$${totalViajes.toLocaleString()}</div></div>
+      <div class="kcard"><div class="kl">Fees cobrados</div><div class="kv" style="color:var(--gn)">$${cobrado.toLocaleString()}</div></div>
+      <div class="kcard"><div class="kl">Fees pendientes</div><div class="kv" style="color:var(--rd)">$${pendiente.toLocaleString()}</div></div>
+      <div class="kcard"><div class="kl">💰 Comisiones cobradas</div><div class="kv" style="color:var(--gn)">$${commCobradas.toFixed(0)}</div></div>
+      <div class="kcard"><div class="kl">⏳ Comisiones post-viaje</div><div class="kv" style="color:var(--yw)">$${commPendientes.toFixed(0)}</div></div>
     </div>
     <div class="lcard" style="cursor:default">
-      <div class="lcard-name" style="margin-bottom:6px">Resumen proyectado</div>
+      <div class="lcard-name" style="margin-bottom:6px">Resumen</div>
       <div class="cfrow"><span>Total fees</span><span class="cfval">$${totalFees.toLocaleString()}</span></div>
-      <div class="cfrow"><span>Total comisiones est.</span><span class="cfval">$${totalComisiones.toLocaleString()}</span></div>
-      <div class="cfrow"><span>Ingreso proyectado</span><span class="cfval pos">$${(totalFees+totalComisiones).toLocaleString()}</span></div>
+      <div class="cfrow"><span>Total comisiones</span><span class="cfval">$${totalComisiones.toFixed(0)}</span></div>
+      <div class="cfrow"><span>💰 Disponible ahora</span><span class="cfval pos" style="font-size:16px">$${(cobrado+commCobradas).toFixed(0)}</span></div>
+      <div class="cfrow"><span>⏳ Por cobrar (fees + comisiones)</span><span class="cfval" style="color:var(--yw)">$${(pendiente+commPendientes).toFixed(0)}</span></div>
+      <div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Ingreso proyectado total</span><span class="cfval pos" style="font-size:16px">$${(totalFees+totalComisiones).toFixed(0)}</span></div>
     </div>
-    <div class="shdr"><h3>Movimientos</h3><button class="btn-add" onclick="openModal('addPayment')">+ Pago</button></div>
+    <div class="shdr"><h3>Movimientos</h3><div style="display:flex;gap:6px"><button class="btn-add" onclick="exportCommissions()">📊 Exportar</button><button class="btn-add" onclick="openModal('addPayment')">+ Pago</button></div></div>
     ${paymentsHTML||'<div class="empty"><div class="em">💰</div><p>Sin movimientos registrados</p></div>'}`;
 }
 
@@ -1206,7 +1448,7 @@ function renderTareas(){
       <div class="tsk-chk">${t.done?'✓':''}</div>
       <div class="tsk-pri pri-${t.pri||'yw'}"></div>
       <div class="tsk-info">
-        <div class="tsk-title">${t.title}</div>
+        <div class="tsk-title">${t.recurring?'🔄 ':''}${t.title}</div>
         <div class="tsk-meta">
           <span>${catName(t.cat)}</span>
           ${t.deadline?'<span class="tsk-deadline '+deadlineClass(t.deadline)+'">'+deadlineLabel(t.deadline)+'</span>':''}
