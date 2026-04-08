@@ -231,7 +231,7 @@ button{font-family:var(--dm);cursor:pointer}input,select,textarea{font-family:va
 </div>
 
 <div class="view" id="v-alertas">
-<div class="shdr"><h3>🔔 Alertas</h3></div>
+<div class="shdr"><h3>🔔 Alertas</h3><button class="btn-add" onclick="clearAlerts()" style="background:var(--rd)">🗑 Limpiar todas</button></div>
 <div id="alertList"></div>
 </div>
 
@@ -422,6 +422,7 @@ function initFirebase(){
   db = firebase.database();
   db.ref('data').on('value', snap => {
     const val = snap.val();
+    let needsSave = false;
     if(val){
       D.leads = val.leads||{};
       D.clients = val.clients||{};
@@ -430,14 +431,13 @@ function initFirebase(){
       D.content = val.content||{};
       D.payments = val.payments||{};
       D.categories = val.categories||[...TASK_CATEGORIES];
-    } else {
-      // Base vacía — cargar datos por defecto
-      loadDefaultTemplates();
-      loadDefaultTasks();
-      loadDefaultClients();
-      loadDefaultLeads();
-      save();
+      D.alertsDismissedAt = val.alertsDismissedAt||0;
     }
+    // Cargar datos por defecto para lo que esté vacío
+    if(!Object.keys(D.clients).length){loadDefaultClients();needsSave=true;}
+    if(!Object.keys(D.tasks).length){loadDefaultTasks();needsSave=true;}
+    if(!Object.keys(D.templates).length){loadDefaultTemplates();needsSave=true;}
+    if(needsSave) save();
     renderCurrent();
   });
 }
@@ -1509,10 +1509,11 @@ function renderContenido(){
 function getAlerts(){
   const alerts = [];
   const now = Date.now();
+  const dismissed = D.alertsDismissedAt || 0;
   
   // Lead sin contactar 24h/48h
   Object.entries(D.leads).forEach(([id,l])=>{
-    if(l.stage==='Lead' && !l.contactedAt){
+    if(l.stage==='Lead' && !l.contactedAt && (l.createdAt||0) > dismissed){
       const h = (now - (l.createdAt||now))/3600000;
       if(h>=48) alerts.push({type:'rd',title:'🔴 '+l.name+' — 48h sin contacto!',desc:'Lead de '+l.canal+' sin primer contacto. Riesgo alto de pérdida.',time:ago(l.createdAt),action:()=>showLeadDetail(id)});
       else if(h>=24) alerts.push({type:'yw',title:'⚠️ '+l.name+' — 24h sin contacto',desc:'Contactar hoy para no perder el lead.',time:ago(l.createdAt),action:()=>showLeadDetail(id)});
@@ -1521,7 +1522,7 @@ function getAlerts(){
   
   // Tareas vencidas
   Object.entries(D.tasks).forEach(([id,t])=>{
-    if(!t.done && t.deadline && isOverdue(t.deadline)){
+    if(!t.done && t.deadline && isOverdue(t.deadline) && (t.createdAt||0) > dismissed){
       alerts.push({type:'rd',title:'📌 Tarea vencida: '+t.title,desc:'Fecha límite: '+t.deadline,time:'Vencida'});
     } else if(!t.done && t.deadline && isToday(t.deadline)){
       alerts.push({type:'yw',title:'⏰ Tarea vence hoy: '+t.title,desc:'Completar antes de que termine el día',time:'Hoy'});
@@ -1532,7 +1533,7 @@ function getAlerts(){
   Object.entries(D.clients).forEach(([cid,c])=>{
     if(c.tasks){
       Object.entries(c.tasks).forEach(([tid,t])=>{
-        if(!t.done && t.deadline && isOverdue(t.deadline)){
+        if(!t.done && t.deadline && isOverdue(t.deadline) && (t.createdAt||0) > dismissed){
           alerts.push({type:'rd',title:'📌 '+c.name+': '+t.title,desc:'Tarea de cliente vencida: '+t.deadline,time:'Vencida',action:()=>showClientDetail(cid)});
         } else if(!t.done && t.deadline && isToday(t.deadline)){
           alerts.push({type:'yw',title:'⏰ '+c.name+': '+t.title,desc:'Tarea vence hoy',time:'Hoy',action:()=>showClientDetail(cid)});
@@ -1543,13 +1544,21 @@ function getAlerts(){
   
   // Pagos pendientes
   Object.entries(D.payments).forEach(([id,p])=>{
-    if(p.status==='Pendiente'){
+    if(p.status==='Pendiente' && (p.createdAt||0) > dismissed){
       const clientName = D.clients[p.clientId]?.name||'—';
       alerts.push({type:'yw',title:'💳 Pago pendiente: '+clientName,desc:p.concept+' — $'+p.amount,time:p.date||''});
     }
   });
   
   return alerts;
+}
+
+function clearAlerts(){
+  if(!confirm('¿Limpiar todas las alertas actuales? Las nuevas que aparezcan después van a seguir mostrándose.')) return;
+  D.alertsDismissedAt = Date.now();
+  save();
+  renderCurrent();
+  showNotif('🔔 Alertas limpiadas ✓');
 }
 
 function renderAlertas(){
