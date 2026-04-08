@@ -420,6 +420,46 @@ const MONTHLY_EXPENSES = {
   oneTime: {0:{'Gonza':425},1:{'Gonza':425}} // ene-feb
 };
 
+const PROJECTED_INCOME = {
+  0: [
+    {concepto:'Fee Nicolino 100%',monto:350,tipo:'fee',estado:'cobrado'},
+  ],
+  1: [
+    {concepto:'Fee Maxi 100%',monto:150,tipo:'fee',estado:'cobrado'},
+    {concepto:'Fee Iaia 100%',monto:150,tipo:'fee',estado:'cobrado'},
+    {concepto:'Fee Sarr 100%',monto:150,tipo:'fee',estado:'cobrado'},
+  ],
+  2: [
+    {concepto:'Fee Bottos 50%',monto:175,tipo:'fee',estado:'cobrado'},
+    {concepto:'Fee María 50%',monto:75,tipo:'fee',estado:'cobrado'},
+    {concepto:'Fee Manfroi 50%',monto:400,tipo:'fee',estado:'cobrado'},
+    {concepto:'Fee Perillo 50%',monto:350,tipo:'fee',estado:'cobrado'},
+    {concepto:'Fee Parrella 50%',monto:150,tipo:'fee',estado:'cobrado'},
+    {concepto:'Comisiones Maxi (Expedia)',monto:240.27,tipo:'comision',estado:'cobrado'},
+    {concepto:'Comisiones Sarr',monto:114.72,tipo:'comision',estado:'cobrado'},
+    {concepto:'STUBA Parrella',monto:28.97,tipo:'comision',estado:'cobrado'},
+  ],
+  3: [
+    {concepto:'Fee Bottos 50% restante',monto:175,tipo:'fee',estado:'por cobrar'},
+    {concepto:'Fee Parrella 50% restante',monto:150,tipo:'fee',estado:'por cobrar'},
+    {concepto:'Fee Perillo 50% restante',monto:350,tipo:'fee',estado:'por cobrar'},
+    {concepto:'Fee Belén 50% (arrancan)',monto:220,tipo:'fee',estado:'por cobrar'},
+    {concepto:'STUBA debe devolver (Perillo)',monto:2717,tipo:'devolucion',estado:'por cobrar'},
+    {concepto:'Stripe Perillo (en tránsito)',monto:2554,tipo:'cobro',estado:'en tránsito'},
+  ],
+  4: [
+    {concepto:'Archer libera Perillo',monto:1130,tipo:'comision',estado:'post-checkout'},
+    {concepto:'Archer libera Bottos',monto:324,tipo:'comision',estado:'post-checkout'},
+    {concepto:'RateHawk Parrella',monto:84,tipo:'comision',estado:'post-checkout'},
+  ],
+  9: [
+    {concepto:'Fee Manfroi 50% restante',monto:400,tipo:'fee',estado:'por cobrar'},
+  ],
+  10: [
+    {concepto:'Fee Belén 50% restante',monto:220,tipo:'fee',estado:'por cobrar'},
+  ],
+};
+
 // ═══════════════════════════════════════════════════════════════
 // FIREBASE
 // ═══════════════════════════════════════════════════════════════
@@ -1424,7 +1464,10 @@ function renderCash(){
         if(d.getMonth()===m && cm.status==='cobrada') commissions+=cm.netAmount||0;
       });
     });
-    return {feesCobrados,commissions,payments:monthPayments};
+    // Projected income
+    const projected = PROJECTED_INCOME[m]||[];
+    const projTotal = projected.reduce((a,p)=>a+p.monto,0);
+    return {feesCobrados,commissions,payments:monthPayments,projected,projTotal};
   }
   
   // Month tabs
@@ -1438,31 +1481,40 @@ function renderCash(){
   if(cashView==='mensual'){
     const exp = getMonthExpenses(cashMonth);
     const inc = getMonthIncome(cashMonth);
-    const neto = inc.feesCobrados + inc.commissions - exp.total;
+    const totalIngreso = inc.projTotal;
+    const cobrado = inc.projected.filter(p=>p.estado==='cobrado').reduce((a,p)=>a+p.monto,0);
+    const porCobrar = inc.projected.filter(p=>p.estado!=='cobrado').reduce((a,p)=>a+p.monto,0);
+    const neto = totalIngreso - exp.total;
+    
+    const estadoColor = {'cobrado':'var(--gn)','por cobrar':'var(--rd)','en tránsito':'var(--yw)','post-checkout':'var(--pp)'};
+    const estadoIcon = {'cobrado':'💰','por cobrar':'🔴','en tránsito':'⏳','post-checkout':'📦'};
     
     content = '<div class="ftabs" style="margin-top:8px">'+monthTabs+'</div>'+
       '<div class="kgrid">'+
-        '<div class="kcard"><div class="kl">Ingresos '+months[cashMonth]+'</div><div class="kv" style="color:var(--gn)">$'+(inc.feesCobrados+inc.commissions).toFixed(0)+'</div><div class="ks">Fees $'+inc.feesCobrados.toFixed(0)+' + Com $'+inc.commissions.toFixed(0)+'</div></div>'+
-        '<div class="kcard"><div class="kl">Gastos '+months[cashMonth]+'</div><div class="kv" style="color:var(--rd)">$'+exp.total.toFixed(0)+'</div><div class="ks">'+exp.items.length+' conceptos</div></div>'+
+        '<div class="kcard"><div class="kl">💰 Cobrado '+months[cashMonth]+'</div><div class="kv" style="color:var(--gn)">$'+cobrado.toFixed(0)+'</div></div>'+
+        '<div class="kcard"><div class="kl">⏳ Por cobrar '+months[cashMonth]+'</div><div class="kv" style="color:var(--yw)">$'+porCobrar.toFixed(0)+'</div></div>'+
+        '<div class="kcard"><div class="kl">📊 Ingreso total</div><div class="kv">$'+totalIngreso.toFixed(0)+'</div></div>'+
+        '<div class="kcard"><div class="kl">💸 Gastos</div><div class="kv" style="color:var(--rd)">$'+exp.total.toFixed(0)+'</div></div>'+
       '</div>'+
       '<div class="kcard w" style="margin-bottom:16px"><div class="kl">Resultado '+months[cashMonth]+'</div><div class="kv" style="color:'+(neto>=0?'var(--gn)':'var(--rd)')+'">$'+neto.toFixed(0)+'</div></div>'+
-      '<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:6px">Gastos del mes</div>'+
+      '<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:6px">Ingresos proyectados</div>'+
+      (inc.projected.length?inc.projected.map(p=>{
+        const col=estadoColor[p.estado]||'var(--tx2)';
+        const ico=estadoIcon[p.estado]||'';
+        return '<div class="cfrow"><span>'+p.concepto+'<br><span style="font-size:10px;color:'+col+'">'+ico+' '+p.estado+'</span></span><span class="cfval" style="color:'+col+'">$'+p.monto.toLocaleString()+'</span></div>';
+      }).join(''):'<div style="font-size:12px;color:var(--tx3);padding:8px">Sin ingresos proyectados este mes</div>')+
+      '</div>'+
+      '<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:6px">Gastos del mes</div>'+
       exp.items.map(i=>'<div class="cfrow"><span>'+i.name+'</span><span class="cfval neg">-$'+i.amount.toFixed(2)+'</span></div>').join('')+
-      '<div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total</span><span class="cfval neg">-$'+exp.total.toFixed(2)+'</span></div></div>'+
-      '<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:6px">Ingresos del mes</div>'+
-      (inc.payments.length?inc.payments.map(p=>{
-        const cn=clients[p.clientId]?.name||'—';
-        return '<div class="cfrow"><span>'+cn+'<br><span style="font-size:10px;color:var(--tx3)">'+p.concept+' · '+p.method+'</span></span><span class="cfval '+(p.status==='Cobrado'?'pos':'neg')+'">$'+p.amount.toLocaleString()+'</span></div>';
-      }).join(''):'<div style="font-size:12px;color:var(--tx3);padding:8px">Sin ingresos registrados este mes</div>')+
-      '</div>';
+      '<div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total gastos</span><span class="cfval neg">-$'+exp.total.toFixed(2)+'</span></div></div>';
       
   } else if(cashView==='resumen'){
     // Annual P&L
     let totalIngresos=0,totalGastos=0;
     let monthlyData = months.map((m,i)=>{
       const exp=getMonthExpenses(i);
-      const inc=getMonthIncome(i);
-      const ingreso=inc.feesCobrados+inc.commissions;
+      const proj=PROJECTED_INCOME[i]||[];
+      const ingreso=proj.reduce((a,p)=>a+p.monto,0);
       totalIngresos+=ingreso;
       totalGastos+=exp.total;
       const neto=ingreso-exp.total;
