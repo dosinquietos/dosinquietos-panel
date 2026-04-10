@@ -421,42 +421,60 @@ const MONTHLY_EXPENSES = {
 };
 
 const PROJECTED_INCOME = {
+  // Mes 0 = Enero
   0: [
     {concepto:'Fee Nicolino 100%',monto:350,tipo:'fee',estado:'cobrado'},
   ],
+  // Mes 1 = Febrero
   1: [
     {concepto:'Fee Maxi 100%',monto:150,tipo:'fee',estado:'cobrado'},
     {concepto:'Fee Iaia 100%',monto:150,tipo:'fee',estado:'cobrado'},
     {concepto:'Fee Sarr 100%',monto:150,tipo:'fee',estado:'cobrado'},
   ],
+  // Mes 2 = Marzo
   2: [
     {concepto:'Fee Bottos 50%',monto:175,tipo:'fee',estado:'cobrado'},
     {concepto:'Fee María 50%',monto:75,tipo:'fee',estado:'cobrado'},
     {concepto:'Fee Manfroi 50%',monto:400,tipo:'fee',estado:'cobrado'},
     {concepto:'Fee Perillo 50%',monto:350,tipo:'fee',estado:'cobrado'},
     {concepto:'Fee Parrella 50%',monto:150,tipo:'fee',estado:'cobrado'},
-    {concepto:'Comisiones Maxi (Expedia)',monto:240.27,tipo:'comision',estado:'cobrado'},
-    {concepto:'Comisiones Sarr',monto:114.72,tipo:'comision',estado:'cobrado'},
-    {concepto:'STUBA Parrella',monto:28.97,tipo:'comision',estado:'cobrado'},
+    {concepto:'Com Maxi — Archer 80% (Expedia)',monto:240.27,tipo:'comision',estado:'cobrado'},
+    {concepto:'Com Sarr — Archer cobrado',monto:114.72,tipo:'comision',estado:'cobrado'},
+    {concepto:'Com Parrella — STUBA',monto:28.97,tipo:'comision',estado:'cobrado'},
   ],
+  // Mes 3 = Abril — Viajan Perillo+Parrella+Bottos
   3: [
     {concepto:'Fee Bottos 50% restante',monto:175,tipo:'fee',estado:'por cobrar'},
     {concepto:'Fee Parrella 50% restante',monto:150,tipo:'fee',estado:'por cobrar'},
     {concepto:'Fee Perillo 50% restante',monto:350,tipo:'fee',estado:'por cobrar'},
-    {concepto:'Fee Belén 50% (arrancan)',monto:220,tipo:'fee',estado:'por cobrar'},
+    {concepto:'⚠️ Com Nicolino — Archer debe (ya viajó)',monto:240,tipo:'comision',estado:'pendiente archer'},
+    {concepto:'⚠️ Com Iaia — Archer debe (ya viajó)',monto:143,tipo:'comision',estado:'pendiente archer'},
     {concepto:'STUBA debe devolver (Perillo)',monto:2717,tipo:'devolucion',estado:'por cobrar'},
-    {concepto:'Stripe Perillo (en tránsito)',monto:2554,tipo:'cobro',estado:'en tránsito'},
   ],
+  // Mes 4 = Mayo — Viaja Gasperin. Comisiones post-checkout abril
   4: [
-    {concepto:'Archer libera Perillo',monto:1130,tipo:'comision',estado:'post-checkout'},
-    {concepto:'Archer libera Bottos',monto:324,tipo:'comision',estado:'post-checkout'},
-    {concepto:'RateHawk Parrella',monto:84,tipo:'comision',estado:'post-checkout'},
+    {concepto:'Com Bottos — Archer 80% post-checkout',monto:324,tipo:'comision',estado:'post-checkout'},
+    {concepto:'Com Perillo — Archer 80% (parcial 1/2)',monto:638,tipo:'comision',estado:'post-checkout'},
+    {concepto:'Com Parrella — RateHawk post-checkout',monto:61,tipo:'comision',estado:'post-checkout'},
   ],
+  // Mes 5 = Junio — Viaja María. Comisiones Gasperin
+  5: [
+    {concepto:'Fee María 50% restante',monto:75,tipo:'fee',estado:'por cobrar'},
+    {concepto:'Com Perillo — Archer 80% (parcial 2/2)',monto:638,tipo:'comision',estado:'post-checkout'},
+    {concepto:'Com Gasperin — Archer 80% post-checkout',monto:477,tipo:'comision',estado:'post-checkout'},
+  ],
+  // Mes 6 = Julio — Comisiones María post-checkout
+  6: [
+    {concepto:'Com María — Archer 80% post-checkout',monto:384,tipo:'comision',estado:'post-checkout'},
+  ],
+  // Mes 9 = Octubre — Viaja Manfroi
   9: [
     {concepto:'Fee Manfroi 50% restante',monto:400,tipo:'fee',estado:'por cobrar'},
   ],
+  // Mes 10 = Noviembre — Comisiones Manfroi (directo, sin Archer)
   10: [
-    {concepto:'Fee Belén 50% restante',monto:220,tipo:'fee',estado:'por cobrar'},
+    {concepto:'Com Manfroi — directa 100% (sin Archer)',monto:461,tipo:'comision',estado:'post-checkout'},
+    {concepto:'Fee Belén 100%',monto:440,tipo:'fee',estado:'por cobrar'},
   ],
 };
 
@@ -596,17 +614,17 @@ function loadDefaultClients(){
     return s;
   };
   const clients = [
-    {id:'c_nicolino',name:'Nicolino',dest:'Sudeste Asiático',fee:350,feeCobrado:350,feePendiente:0,comision:240.11,travelers:2,status:'finalizado',notes:'Fee 100% cobrado. Comisiones Expedia $213.82 + Civitatis $86.32. Total facturado $590.'},
-    {id:'c_maxi',name:'Maxi',dest:'',fee:150,feeCobrado:150,feePendiente:0,comision:232,travelers:2,status:'finalizado',notes:'Fee 100% cobrado. Comisiones Expedia $290. Cobrado comisiones $240.27. Total $382.'},
-    {id:'c_iaia',name:'Iaia',dest:'',fee:150,feeCobrado:150,feePendiente:0,comision:143.20,travelers:2,status:'finalizado',notes:'Fee 100% cobrado. Comisiones Expedia $179.99. Total $293.20.'},
-    {id:'c_gasperin',name:'Gasperin',dest:'',fee:0,feeCobrado:0,feePendiente:0,comision:477.41,travelers:2,status:'activo',notes:'Sin fee cobrado. Comisiones Expedia $596.76. Comisión cargada $477.41. Total $477.41.'},
-    {id:'c_sarr',name:'Sarr',dest:'',fee:150,feeCobrado:150,feePendiente:0,comision:110.40,travelers:2,status:'finalizado',notes:'Fee 100% cobrado. Comisiones Expedia $137.47 + Civitatis $5.40. Cobrado comisiones $114.72. Total $260.40.'},
-    {id:'c_bottos',name:'Bottos',dest:'',fee:350,feeCobrado:175,feePendiente:175,comision:266.40,travelers:2,status:'activo',notes:'⚠️ Fee 50% PENDIENTE ($175). Comisiones Expedia $333 + Civitatis $72. Total proyectado $683.'},
-    {id:'c_maria',name:'María',dest:'',fee:150,feeCobrado:75,feePendiente:75,comision:384,travelers:2,status:'activo',notes:'⚠️ Fee 50% PENDIENTE ($75). Comisiones Expedia $499.90. Total proyectado $649.90.'},
-    {id:'c_manfroi',name:'Manfroi',dest:'',fee:800,feeCobrado:400,feePendiente:400,comision:0,travelers:2,status:'activo',notes:'⚠️ Fee 50% PENDIENTE ($400). Sin comisiones aún. Total proyectado $800.'},
-    {id:'c_perillo',name:'Perillo',dest:'',fee:700,feeCobrado:350,feePendiente:350,comision:0,travelers:2,status:'activo',notes:'⚠️ Fee 50% PENDIENTE ($350). Sin comisiones aún. Total proyectado $700.'},
-    {id:'c_parrella',name:'Parrella',dest:'',fee:300,feeCobrado:150,feePendiente:150,comision:0,travelers:2,status:'activo',notes:'⚠️ Fee 50% PENDIENTE ($150). Comisiones RateHawk $84.34 + STUBA $28.97. Cobrado STUBA $28.97. Total $300.'},
-    {id:'c_belen',name:'Belén',dest:'',fee:440,feeCobrado:0,feePendiente:440,comision:0,travelers:2,status:'activo',notes:'🔴 Fee 100% PENDIENTE ($440). Sin comisiones. Total proyectado $440.'},
+    {id:'c_nicolino',name:'Nicolino',dest:'Sudeste Asiático',fee:350,feeCobrado:350,feePendiente:0,comision:240,travelers:2,status:'finalizado',viaArcher:true,fechaViaje:'Ya viajó',mesCobro:'Abr',notes:'✅ Fee 100% cobrado. Com Expedia $213.82 + Civitatis $86.32 = $300. Archer 80% = $240. ⚠️ PENDIENTE COBRAR DE ARCHER. Total $590.'},
+    {id:'c_maxi',name:'Maxi',dest:'',fee:150,feeCobrado:150,feePendiente:0,comision:232,travelers:2,status:'finalizado',viaArcher:true,fechaViaje:'Ya viajó',mesCobro:'Cobrado',notes:'✅ Todo cobrado. Com Expedia $290. Archer 80% = $232. Cobrado $240.27. Total $382.'},
+    {id:'c_iaia',name:'Iaia',dest:'',fee:150,feeCobrado:150,feePendiente:0,comision:143,travelers:2,status:'finalizado',viaArcher:true,fechaViaje:'Ya viajó',mesCobro:'Abr',notes:'✅ Fee cobrado. Com Expedia $179.99. Archer 80% = $143. ⚠️ PENDIENTE COBRAR DE ARCHER. Total $293.'},
+    {id:'c_sarr',name:'Sarr',dest:'',fee:150,feeCobrado:150,feePendiente:0,comision:110,travelers:2,status:'finalizado',viaArcher:true,fechaViaje:'Ya viajó',mesCobro:'Cobrado',notes:'✅ Todo cobrado. Com Expedia $137.47 + Civitatis $5.40. Cobrado $114.72. Total $260.'},
+    {id:'c_gasperin',name:'Gasperin',dest:'Europa',fee:0,feeCobrado:0,feePendiente:0,comision:477,travelers:4,status:'activo',viaArcher:true,fechaViaje:'Mayo 2026',mesCobro:'Jun',notes:'Sin fee (familia). Com Expedia $596.76. Archer 80% = $477. Total $477.'},
+    {id:'c_bottos',name:'Bottos',dest:'Europa',fee:350,feeCobrado:175,feePendiente:175,comision:324,travelers:1,status:'activo',viaArcher:true,fechaViaje:'Abril 2026',mesCobro:'May',notes:'⚠️ Fee 50% PENDIENTE ($175). Com Expedia $333 + Civitatis $72 = $405. Archer 80% = $324. Total $683.'},
+    {id:'c_maria',name:'María',dest:'Europa',fee:150,feeCobrado:75,feePendiente:75,comision:384,travelers:1,status:'activo',viaArcher:true,fechaViaje:'Junio 2026',mesCobro:'Jul-Ago',notes:'⚠️ Fee 50% PEND ($75). Com $499.90. Archer 80% = $384. ÚLTIMO CLIENTE ARCHER. Total $650.'},
+    {id:'c_manfroi',name:'Manfroi',dest:'Europa',fee:800,feeCobrado:400,feePendiente:400,comision:0,travelers:4,status:'activo',viaArcher:false,fechaViaje:'Octubre 2026',mesCobro:'Nov',notes:'⚠️ Fee 50% PEND ($400). FUERA DE ARCHER — comisiones 100% directas. Total $800+.'},
+    {id:'c_perillo',name:'Perillo',dest:'Europa',fee:700,feeCobrado:350,feePendiente:350,comision:1276,travelers:7,status:'activo',viaArcher:true,fechaViaje:'Abril 2026',mesCobro:'May-Jun',notes:'⚠️ Fee 50% PEND ($350). Com Expedia $1,595. Archer 80% = $1,276. 7 pax = motor referidos. Total $2,295.'},
+    {id:'c_parrella',name:'Parrella',dest:'Europa',fee:300,feeCobrado:150,feePendiente:150,comision:90,travelers:2,status:'activo',viaArcher:false,fechaViaje:'Abril 2026',mesCobro:'May',notes:'⚠️ Fee 50% PEND ($150). Com RateHawk $84 + STUBA $29 = $113. Cobrado $29. Pend $61. Total $300.'},
+    {id:'c_belen',name:'Belén',dest:'',fee:440,feeCobrado:0,feePendiente:440,comision:0,travelers:1,status:'activo',viaArcher:false,fechaViaje:'',mesCobro:'TBD',notes:'🔴 Fee 100% PENDIENTE ($440). Sin hotel — sin comisiones. Fecha TBD. Total $440.'},
   ];
   clients.forEach((c,i) => {
     const doneSteps = c.status==='finalizado' ? 46 : c.feeCobrado > 0 && c.feePendiente === 0 ? 20 : c.feeCobrado > 0 ? 10 : 3;
