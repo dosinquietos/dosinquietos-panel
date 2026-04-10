@@ -503,6 +503,7 @@ function initFirebase(){
       D.alertsDismissedAt = val.alertsDismissedAt||0;
     }
     // Cargar datos por defecto para lo que esté vacío
+    if(!Object.keys(D.leads).length){loadDefaultLeads();needsSave=true;}
     if(!Object.keys(D.clients).length){loadDefaultClients();needsSave=true;}
     if(!Object.keys(D.tasks).length){loadDefaultTasks();needsSave=true;}
     if(!Object.keys(D.templates).length){loadDefaultTemplates();needsSave=true;}
@@ -667,6 +668,7 @@ function loadDefaultLeads(){
     {name:'Grisel Fernández',email:'griselfernandezn@gmail.com',phone:'542342509511',dest:'Tailandia',canal:'Instagram',stage:'Lead',ref:'',budget:'Prefiero que lo veamos juntos',travelers:2,notes:'2 amigos. Bangkok, Chiang Mai, Chiang Rai, islas (Krabi, Phuket). Dic 2026 - Ene 2027.',createdAt:new Date('2026-04-06T12:07:49').getTime()},
     {name:'Cabrera Brenda',email:'brencabrera93@gmail.com',phone:'3415152364',dest:'Tailandia e Indonesia',canal:'Instagram',stage:'Lead',ref:'',budget:'USD 2.500–4.000',travelers:2,notes:'2 amigos. Nov-Dic 2026.',createdAt:new Date('2026-04-06T15:27:45').getTime()},
     {name:'Florencia Trey',email:'florenciatrey95@gmail.com',phone:'3534451130',dest:'Tailandia, Vietnam',canal:'Instagram',stage:'Call realizada',ref:'',budget:'Prefiero que lo veamos juntos',travelers:2,notes:'Pareja. Templo Blanco, santuario de elefantes, islas. Ya tuvo videollamada.',createdAt:new Date('2026-03-30T15:05:00').getTime(),contactedAt:new Date('2026-04-07').getTime()},
+    {name:'Mario Ponce',email:'',phone:'',dest:'',canal:'',stage:'Lead',ref:'',budget:'',travelers:2,notes:'',createdAt:new Date('2026-04-10').getTime()},
   ];
   leads.forEach((l,i) => {
     D.leads['lead_'+i] = {...l, contactedAt:null};
@@ -1100,7 +1102,7 @@ function renderInicio(){
     <div class="kgrid">
       <div class="kcard"><div class="kl">Leads totales</div><div class="kv">${totalLeads}</div></div>
       <div class="kcard"><div class="kl">Tasa de cierre</div><div class="kv" style="color:${tasaGlobal>15?'var(--gn)':'var(--rd)'}">${tasaGlobal}%</div></div>
-      <div class="kcard"><div class="kl">Fees cobrados</div><div class="kv" style="color:var(--gn)">$${feeCobrado.toLocaleString()}</div></div>
+      <div class="kcard"><div class="kl">Fees cobrados</div><div class="kv" style="color:var(--gn)">USD ${feeCobrado.toLocaleString()}</div></div>
       <div class="kcard"><div class="kl">Clientes activos</div><div class="kv" style="color:var(--gold)">${clients.length}</div></div>
     </div>
     ${canalHTML?'<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:6px">Conversión por canal</div>'+canalHTML+'</div>':''}`;
@@ -1276,7 +1278,7 @@ function showClientDetail(id){
       <div class="pbar"><div class="pfill" style="width:${pct}%"></div></div>
       <div style="font-size:11px;color:var(--tx3);margin-top:4px">${done}/${steps.length} pasos (${pct}%)</div>
     </div>
-    ${(()=>{const pend=Object.values(D.payments).filter(p=>p.clientId===id&&p.status==='Pendiente');const total=pend.reduce((a,p)=>a+p.amount,0);return total>0?'<div class="alcard rd"><div class="al-t">⚠️ Cobro pendiente: $'+total.toLocaleString()+'</div><div class="al-d">'+pend.map(p=>p.concept+' $'+p.amount).join(' · ')+'</div></div>':'';})()}
+    ${(()=>{const pend=Object.values(D.payments).filter(p=>p.clientId===id&&p.status==='Pendiente');const total=pend.reduce((a,p)=>a+p.amount,0);return total>0?'<div class="alcard rd"><div class="al-t">⚠️ Cobro pendiente: $'+total.toLocaleString()+'</div><div class="al-d">'+pend.map(p=>p.concept+' USD '+p.amount).join(' · ')+'</div></div>':'';})()}
     
     <div class="shdr"><h3>Checklist del viaje</h3></div>
     ${phasesHTML}
@@ -1304,9 +1306,9 @@ function showClientDetail(id){
         const prov = PROVIDERS.find(p=>p.id===cm.provider)||{name:cm.provider};
         const statusIcon = cm.status==='cobrada'?'💰':'⏳';
         const statusColor = cm.status==='cobrada'?'var(--gn)':'var(--yw)';
-        return '<div class="cfrow" style="cursor:pointer" onclick="toggleCommStatus(\''+id+'\',\''+k+'\')"><span>'+(cm.name||'—')+'<br><span style="font-size:10px;color:var(--tx3)">'+prov.name+' · $'+cm.bookingAmount+' → '+(cm.rateUsed||0)+'%'+(cm.archerCut?' (-'+cm.archerCut+'% Archer)':'')+'</span><br><span style="font-size:10px;color:'+statusColor+'">'+statusIcon+' '+(cm.status==='cobrada'?'Cobrada':'Pendiente post-viaje')+' (tocar para cambiar)</span></span><span class="cfval pos">$'+cm.netAmount.toFixed(2)+'</span></div>';
+        return '<div class="cfrow" style="cursor:pointer" onclick="toggleCommStatus(\''+id+'\',\''+k+'\')"><span>'+(cm.name||'—')+'<br><span style="font-size:10px;color:var(--tx3)">'+prov.name+' · USD '+cm.bookingAmount+' → '+(cm.rateUsed||0)+'%'+(cm.archerCut?' (-'+cm.archerCut+'% Archer)':'')+'</span><br><span style="font-size:10px;color:'+statusColor+'">'+statusIcon+' '+(cm.status==='cobrada'?'Cobrada':'Pendiente post-viaje')+' (tocar para cambiar)</span></span><span class="cfval pos">USD '+cm.netAmount.toFixed(2)+'</span></div>';
       }).join('');
-      if(comms.length) html += '<div style="background:var(--s2);border-radius:8px;padding:10px;margin-top:6px"><div class="cfrow"><span>💰 Comisiones cobradas</span><span class="cfval pos">$'+totalCobrada.toFixed(2)+'</span></div><div class="cfrow"><span>⏳ Pendientes post-viaje</span><span class="cfval" style="color:var(--yw)">$'+totalPendiente.toFixed(2)+'</span></div><div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total comisiones</span><span class="cfval pos" style="font-size:16px">$'+totalComm.toFixed(2)+'</span></div></div>';
+      if(comms.length) html += '<div style="background:var(--s2);border-radius:8px;padding:10px;margin-top:6px"><div class="cfrow"><span>💰 Comisiones cobradas</span><span class="cfval pos">USD '+totalCobrada.toFixed(2)+'</span></div><div class="cfrow"><span>⏳ Pendientes post-viaje</span><span class="cfval" style="color:var(--yw)">USD '+totalPendiente.toFixed(2)+'</span></div><div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total comisiones</span><span class="cfval pos" style="font-size:16px">USD '+totalComm.toFixed(2)+'</span></div></div>';
       return html||'<div style="font-size:12px;color:var(--tx3);padding:8px">Sin comisiones cargadas</div>';
     })()}
     
@@ -1376,8 +1378,8 @@ function calcCommPreview(){
       info += ' → -'+prov.archerCut+'% Archer = '+((prov.rate)*(1-prov.archerCut/100)).toFixed(1)+'% neto';
     }
   }
-  preview.innerHTML='💰 Comisión bruta: <b>$'+gross.toFixed(2)+'</b><br>'+
-    (prov.archerCut?'🏢 Después de Archer: <b style="color:var(--gn)">$'+net.toFixed(2)+'</b><br>':'')+
+  preview.innerHTML='💰 Comisión bruta: <b>USD '+gross.toFixed(2)+'</b><br>'+
+    (prov.archerCut?'🏢 Después de Archer: <b style="color:var(--gn)">USD '+net.toFixed(2)+'</b><br>':'')+
     '📊 '+info;
 }
 
@@ -1403,7 +1405,7 @@ function saveClientCommission(clientId){
   const commStatus = provId==='manual' ? 'pendiente' : (prov&&prov.timing==='upfront' ? 'cobrada' : 'pendiente');
   D.clients[clientId].commissions[uid()] = {name:resName,provider:provId,bookingAmount:booking,netAmount,rateUsed,archerCut,status:commStatus,createdAt:Date.now()};
   save();closeModal();showClientDetail(clientId);
-  showNotif('Comisión $'+netAmount.toFixed(2)+' — '+resName+' ✓');
+  showNotif('Comisión USD '+netAmount.toFixed(2)+' — '+resName+' ✓');
 }
 
 function toggleCommStatus(clientId, commKey){
@@ -1509,22 +1511,22 @@ function renderCash(){
     
     content = '<div class="ftabs" style="margin-top:8px">'+monthTabs+'</div>'+
       '<div class="kgrid">'+
-        '<div class="kcard"><div class="kl">💰 Cobrado '+months[cashMonth]+'</div><div class="kv" style="color:var(--gn)">$'+cobrado.toFixed(0)+'</div></div>'+
-        '<div class="kcard"><div class="kl">⏳ Por cobrar '+months[cashMonth]+'</div><div class="kv" style="color:var(--yw)">$'+porCobrar.toFixed(0)+'</div></div>'+
-        '<div class="kcard"><div class="kl">📊 Ingreso total</div><div class="kv">$'+totalIngreso.toFixed(0)+'</div></div>'+
-        '<div class="kcard"><div class="kl">💸 Gastos</div><div class="kv" style="color:var(--rd)">$'+exp.total.toFixed(0)+'</div></div>'+
+        '<div class="kcard"><div class="kl">💰 Cobrado '+months[cashMonth]+'</div><div class="kv" style="color:var(--gn)">USD '+cobrado.toFixed(0)+'</div></div>'+
+        '<div class="kcard"><div class="kl">⏳ Por cobrar '+months[cashMonth]+'</div><div class="kv" style="color:var(--yw)">USD '+porCobrar.toFixed(0)+'</div></div>'+
+        '<div class="kcard"><div class="kl">📊 Ingreso total</div><div class="kv">USD '+totalIngreso.toFixed(0)+'</div></div>'+
+        '<div class="kcard"><div class="kl">💸 Gastos</div><div class="kv" style="color:var(--rd)">USD '+exp.total.toFixed(0)+'</div></div>'+
       '</div>'+
-      '<div class="kcard w" style="margin-bottom:16px"><div class="kl">Resultado '+months[cashMonth]+'</div><div class="kv" style="color:'+(neto>=0?'var(--gn)':'var(--rd)')+'">$'+neto.toFixed(0)+'</div></div>'+
+      '<div class="kcard w" style="margin-bottom:16px"><div class="kl">Resultado '+months[cashMonth]+'</div><div class="kv" style="color:'+(neto>=0?'var(--gn)':'var(--rd)')+'">USD '+neto.toFixed(0)+'</div></div>'+
       '<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:6px">Ingresos proyectados</div>'+
       (inc.projected.length?inc.projected.map(p=>{
         const col=estadoColor[p.estado]||'var(--tx2)';
         const ico=estadoIcon[p.estado]||'';
-        return '<div class="cfrow"><span>'+p.concepto+'<br><span style="font-size:10px;color:'+col+'">'+ico+' '+p.estado+'</span></span><span class="cfval" style="color:'+col+'">$'+p.monto.toLocaleString()+'</span></div>';
+        return '<div class="cfrow"><span>'+p.concepto+'<br><span style="font-size:10px;color:'+col+'">'+ico+' '+p.estado+'</span></span><span class="cfval" style="color:'+col+'">USD '+p.monto.toLocaleString()+'</span></div>';
       }).join(''):'<div style="font-size:12px;color:var(--tx3);padding:8px">Sin ingresos proyectados este mes</div>')+
       '</div>'+
       '<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:6px">Gastos del mes</div>'+
-      exp.items.map(i=>'<div class="cfrow"><span>'+i.name+'</span><span class="cfval neg">-$'+i.amount.toFixed(2)+'</span></div>').join('')+
-      '<div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total gastos</span><span class="cfval neg">-$'+exp.total.toFixed(2)+'</span></div></div>';
+      exp.items.map(i=>'<div class="cfrow"><span>'+i.name+'</span><span class="cfval neg">-USD '+i.amount.toFixed(2)+'</span></div>').join('')+
+      '<div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total gastos</span><span class="cfval neg">-USD '+exp.total.toFixed(2)+'</span></div></div>';
       
   } else if(cashView==='resumen'){
     // Annual P&L
@@ -1536,22 +1538,22 @@ function renderCash(){
       totalIngresos+=ingreso;
       totalGastos+=exp.total;
       const neto=ingreso-exp.total;
-      return '<div class="cfrow"><span><b>'+m+'</b></span><span style="font-size:11px;display:flex;gap:12px"><span style="color:var(--gn)">+$'+ingreso.toFixed(0)+'</span><span style="color:var(--rd)">-$'+exp.total.toFixed(0)+'</span><span style="color:'+(neto>=0?'var(--gn)':'var(--rd)')+';font-weight:600">$'+neto.toFixed(0)+'</span></span></div>';
+      return '<div class="cfrow"><span><b>'+m+'</b></span><span style="font-size:11px;display:flex;gap:12px"><span style="color:var(--gn)">+'+ingreso.toFixed(0)+'</span><span style="color:var(--rd)">-'+exp.total.toFixed(0)+'</span><span style="color:'+(neto>=0?'var(--gn)':'var(--rd)')+';font-weight:600">'+neto.toFixed(0)+'</span></span></div>';
     }).join('');
     
     const ganancia = (allFeesCobrados+allFeesPendientes+allCommCobradas+allCommPendientes) - 3537;
     
     content = '<div class="kgrid">'+
-      '<div class="kcard"><div class="kl">Ingresos 2026</div><div class="kv" style="color:var(--gn)">$'+(allFeesCobrados+allFeesPendientes+allCommCobradas+allCommPendientes).toFixed(0)+'</div><div class="ks">Fees $'+(allFeesCobrados+allFeesPendientes).toFixed(0)+' + Com $'+(allCommCobradas+allCommPendientes).toFixed(0)+'</div></div>'+
-      '<div class="kcard"><div class="kl">Gastos 2026</div><div class="kv" style="color:var(--rd)">$3,537</div><div class="ks">Herramientas + Archer + Gonza</div></div>'+
+      '<div class="kcard"><div class="kl">Ingresos 2026 (USD)</div><div class="kv" style="color:var(--gn)">'+(allFeesCobrados+allFeesPendientes+allCommCobradas+allCommPendientes).toFixed(0)+'</div><div class="ks">Fees '+(allFeesCobrados+allFeesPendientes).toFixed(0)+' + Com '+(allCommCobradas+allCommPendientes).toFixed(0)+'</div></div>'+
+      '<div class="kcard"><div class="kl">Gastos 2026 (USD)</div><div class="kv" style="color:var(--rd)">3,537</div><div class="ks">Herramientas + Archer + Gonza</div></div>'+
       '</div>'+
-      '<div class="kcard w" style="margin-bottom:16px"><div class="kl">Ganancia neta proyectada 2026</div><div class="kv" style="color:var(--gn)">+$'+ganancia.toFixed(0)+'</div></div>'+
+      '<div class="kcard w" style="margin-bottom:16px"><div class="kl">Ganancia neta 2026 (USD)</div><div class="kv" style="color:var(--gn)">+'+ganancia.toFixed(0)+'</div></div>'+
       '<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:6px">Mes a mes</div>'+monthlyData+
-      '<div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total</span><span style="font-size:11px;display:flex;gap:12px"><span style="color:var(--gn)">+$'+totalIngresos.toFixed(0)+'</span><span style="color:var(--rd)">-$'+totalGastos.toFixed(0)+'</span><span style="font-weight:600;color:var(--gn)">$'+(totalIngresos-totalGastos).toFixed(0)+'</span></span></div></div>';
+      '<div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total (USD)</span><span style="font-size:11px;display:flex;gap:12px"><span style="color:var(--gn)">+'+totalIngresos.toFixed(0)+'</span><span style="color:var(--rd)">-'+totalGastos.toFixed(0)+'</span><span style="font-weight:600;color:var(--gn)">'+(totalIngresos-totalGastos).toFixed(0)+'</span></span></div></div>';
       
   } else if(cashView==='donde'){
     content = '<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:8px">🇦🇷 Cuenta Argentina</div>'+
-      '<div class="cfrow"><span>Fees cobrados</span><span class="cfval pos">$'+allFeesCobrados.toLocaleString()+'</span></div>'+
+      '<div class="cfrow"><span>Fees cobrados</span><span class="cfval pos">USD '+allFeesCobrados.toLocaleString()+'</span></div>'+
       '<div class="cfrow"><span>Reembolsos clientes</span><span class="cfval">En cuenta</span></div>'+
       '<div class="cfrow"><span>Deuda tarjeta crédito AR (Perillo)</span><span class="cfval neg">-$3,847</span></div>'+
       '<div class="cfrow"><span>Cubierta con reembolso</span><span class="cfval pos">+$4,001</span></div>'+
@@ -1568,8 +1570,8 @@ function renderCash(){
       '<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">⚠️ Te deben</div>'+
       '<div class="cfrow"><span>STUBA (hotel fallido Perillo)</span><span class="cfval" style="color:var(--rd)">$2,717</span></div>'+
       '<div class="cfrow"><span>Stripe (Perillo, en tránsito)</span><span class="cfval" style="color:var(--yw)">~$2,554</span></div>'+
-      '<div class="cfrow"><span>Fees pendientes clientes</span><span class="cfval" style="color:var(--rd)">$'+allFeesPendientes.toLocaleString()+'</span></div>'+
-      '<div class="cfrow"><span>Comisiones post-viaje</span><span class="cfval" style="color:var(--yw)">$'+allCommPendientes.toFixed(0)+'</span></div>'+
+      '<div class="cfrow"><span>Fees pendientes clientes</span><span class="cfval" style="color:var(--rd)">USD '+allFeesPendientes.toLocaleString()+'</span></div>'+
+      '<div class="cfrow"><span>Comisiones post-viaje</span><span class="cfval" style="color:var(--yw)">USD '+allCommPendientes.toFixed(0)+'</span></div>'+
       '</div>';
   }
   
@@ -1578,7 +1580,7 @@ function renderCash(){
     (payments.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,10).map(p=>{
       const cn=clients[p.clientId]?.name||'—';
       const sc=p.status==='Cobrado'?'pos':'neg';
-      return '<div class="cfrow"><span>'+cn+'<br><span style="font-size:10px;color:var(--tx3)">'+p.concept+' · '+p.method+' · '+(p.date||'')+'</span></span><span class="cfval '+sc+'">$'+p.amount.toLocaleString()+'</span></div>';
+      return '<div class="cfrow"><span>'+cn+'<br><span style="font-size:10px;color:var(--tx3)">'+p.concept+' · '+p.method+' · '+(p.date||'')+'</span></span><span class="cfval '+sc+'">USD '+p.amount.toLocaleString()+'</span></div>';
     }).join('')||'<div style="font-size:12px;color:var(--tx3);padding:8px">Sin movimientos</div>');
 }
 
@@ -1709,7 +1711,7 @@ function getAlerts(){
   Object.entries(D.payments).forEach(([id,p])=>{
     if(p.status==='Pendiente' && (p.createdAt||0) > dismissed){
       const clientName = D.clients[p.clientId]?.name||'—';
-      alerts.push({type:'yw',title:'💳 Pago pendiente: '+clientName,desc:p.concept+' — $'+p.amount,time:p.date||''});
+      alerts.push({type:'yw',title:'💳 Pago pendiente: '+clientName,desc:p.concept+' — USD '+p.amount,time:p.date||''});
     }
   });
   
