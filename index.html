@@ -237,6 +237,7 @@ button{font-family:var(--dm);cursor:pointer}input,select,textarea{font-family:va
 
 <div class="view" id="v-leadDetail"></div>
 <div class="view" id="v-clientDetail"></div>
+<div class="view" id="v-stats"></div>
 </div>
 
 <nav class="bnav">
@@ -251,6 +252,7 @@ button{font-family:var(--dm);cursor:pointer}input,select,textarea{font-family:va
 <button class="more-item" onclick="go('tareas');closeMore()">📝 Tareas</button>
 <button class="more-item" onclick="go('plantillas');closeMore()">💬 Plantillas</button>
 <button class="more-item" onclick="go('contenido');closeMore()">📅 Contenido</button>
+<button class="more-item" onclick="go('stats');closeMore()">📈 Estadísticas</button>
 <button class="more-item" onclick="go('alertas');closeMore()">🔔 Alertas <span id="alertBadgeMenu" style="color:var(--rd);font-size:11px;margin-left:4px"></span></button>
 </div>
 </div>
@@ -285,8 +287,8 @@ const NOTIFY_EMAILS = ["viajes@dosinquietos.com"];
 // ═══════════════════════════════════════════════════════════════
 // DATOS BASE
 // ═══════════════════════════════════════════════════════════════
-const LEAD_STAGES = ['Lead','Formulario','Call agendada','Call realizada','Propuesta','Seguimiento','Cerrado','Perdido'];
-const STAGE_COLORS = {Lead:'var(--bl)',Formulario:'var(--pp)','Call agendada':'var(--yw)','Call realizada':'var(--gold)',Propuesta:'var(--or)',Seguimiento:'var(--pp)',Cerrado:'var(--gn)',Perdido:'var(--rd)'};
+const LEAD_STAGES = ['Lead','Formulario','Call agendada','Call realizada','Propuesta','Primer seguimiento','Segundo seguimiento','Ultimo seguimiento','Cerrado','Perdido'];
+const STAGE_COLORS = {Lead:'var(--bl)',Formulario:'var(--pp)','Call agendada':'var(--yw)','Call realizada':'var(--gold)',Propuesta:'var(--or)','Primer seguimiento':'var(--pp)','Segundo seguimiento':'var(--pp)','Ultimo seguimiento':'var(--pp)',Cerrado:'var(--gn)',Perdido:'var(--rd)'};
 
 const PROVIDERS = [
   {id:'ratehawk',name:'RateHawk',rate:6,type:'Hoteles',timing:'post'},
@@ -304,6 +306,7 @@ const CLIENT_PHASES = [
   {id:'captacion',name:'Captación',icon:'🎯'},
   {id:'diagnostico',name:'Diagnóstico',icon:'🔍'},
   {id:'cierre',name:'Cierre',icon:'🤝'},
+  {id:'itinerario',name:'Itinerario',icon:'🗺️'},
   {id:'vuelos',name:'Vuelos',icon:'✈️'},
   {id:'traslados',name:'Traslados internos',icon:'🚌'},
   {id:'hoteles',name:'Hoteles',icon:'🏨'},
@@ -359,6 +362,10 @@ const DEFAULT_STEPS = [
   {phase:'viajepost',text:'Pedir testimonio escrito o video',tag:'Review'},
   {phase:'viajepost',text:'Pedir reseña en Google Business Profile',tag:'Reseña'},
   {phase:'viajepost',text:'Ofrecer descuento por recomendación',tag:'Fidelización'},
+  {phase:'itinerario',text:'Diseño de itinerario',tag:'Diseño'},
+  {phase:'itinerario',text:'Envío de 3 itinerarios al cliente',tag:'Envío'},
+  {phase:'itinerario',text:'Confirmación de itinerario',tag:'Confirmación'},
+  {phase:'previaje',text:'Confirmación seguro de viaje',tag:'Seguro'},
 ];
 
 const TASK_CATEGORIES = [
@@ -401,7 +408,7 @@ const DEFAULT_TEMPLATES = [
 // STATE
 // ═══════════════════════════════════════════════════════════════
 let db = null;
-let D = {leads:{},clients:{},tasks:{},templates:{},content:{},payments:{},categories:[...TASK_CATEGORIES]};
+let D = {leads:{},clients:{},tasks:{},templates:{},content:{},payments:{},expenses:{},categories:[...TASK_CATEGORIES],migrations:{},projectedRevenue:{},cashflowOverrides:{},incomeItems:{}};
 let currentView = 'inicio';
 let pipeFilter = 'Todos';
 let taskCatFilter = 'todos';
@@ -409,6 +416,7 @@ let taskPriFilter = 'todos';
 let contFilter = 'cal';
 let clientFilter = 'activo';
 let cashMonth = new Date().getMonth(); // 0=Jan current month
+let expandedPhases = new Set(); // fases expandidas en detalle del cliente
 let cashView = 'mensual'; // mensual or resumen
 
 const MONTHLY_EXPENSES = {
@@ -499,7 +507,12 @@ function initFirebase(){
       D.templates = val.templates||{};
       D.content = val.content||{};
       D.payments = val.payments||{};
+      D.expenses = val.expenses||{};
       D.categories = val.categories||[...TASK_CATEGORIES];
+      D.migrations = val.migrations||{};
+      D.projectedRevenue = val.projectedRevenue||{};
+      D.cashflowOverrides = val.cashflowOverrides||{};
+      D.incomeItems = val.incomeItems||{};
       D.alertsDismissedAt = val.alertsDismissedAt||0;
     }
     // Cargar datos por defecto para lo que esté vacío
@@ -508,6 +521,7 @@ function initFirebase(){
     if(!Object.keys(D.tasks).length){loadDefaultTasks();needsSave=true;}
     if(!Object.keys(D.templates).length){loadDefaultTemplates();needsSave=true;}
     if(needsSave) save();
+    runMigrations();
     renderCurrent();
   });
 }
@@ -532,6 +546,7 @@ function loadLocal(){
   if(!Object.keys(D.clients).length){loadDefaultClients();changed=true;}
   if(!Object.keys(D.leads).length){loadDefaultLeads();changed=true;}
   if(changed) save();
+  runMigrations();
   renderCurrent();
 }
 
@@ -544,15 +559,15 @@ function loadDefaultTemplates(){
 function loadDefaultTasks(){
   const tasks = [
     // PROVEEDORES
-    {title:'Verificar estado del trámite TIDS',cat:'proveedores',pri:'rd',notes:'Entrar al portal de IATA y revisar estado. El TIDS es la llave para acceder a más proveedores.'},
-    {title:'Aplicar a Hotelbeds como partner',cat:'proveedores',pri:'rd',notes:'Ir al sitio de Hotelbeds, completar formulario de partner con el ABN. Proceso tarda 1-2 semanas.'},
+    {title:'TIDS — completar documentación solicitada',cat:'proveedores',pri:'rd',notes:'IATA pidió documentación adicional. Destraba Exoticca, CLIA y la salida limpia de Archer. Completar y reenviar.'},
+    {title:'Estrenar Hotelbeds con primer cliente',cat:'proveedores',pri:'yw',notes:'Habilitado pero sin primera reserva. Al usarlo, registrar condiciones reales (comisión/markup, pago, velocidad) para comparar con RateHawk/STUBA.'},
+    {title:'Re-enviar follow-up a Expedia TAAP',cat:'proveedores',pri:'yw',notes:'No contestan. Reintentar y, si no responden en 7-10 días, buscar contacto alternativo o postergar.'},
     {title:'Completar aplicación a Duffel (vuelos)',cat:'proveedores',pri:'rd',notes:'Vuelos sin IATA. USD 3/orden + 1%. Completar el registro.'},
-    {title:'Completar aplicación a Rail Europe',cat:'proveedores',pri:'yw',notes:'Portal B2B: agent.raileurope.com. Aplicación enviada.'},
     {title:'Completar aplicación a HotelDo',cat:'proveedores',pri:'yw',notes:'Especialista LATAM y Caribe. Aplicación enviada.'},
-    {title:'Aplicar a Civitatis',cat:'proveedores',pri:'yw',notes:'Comisión 10%. En proceso de aplicación.'},
     {title:'Aplicar a Allianz Partners / Cover-More (seguros)',cat:'proveedores',pri:'yw',notes:'Comisión 20-30% en seguros de viaje.'},
     {title:'Aplicar a Carnect (alquiler de autos)',cat:'proveedores',pri:'gn',notes:'Alquiler de autos B2B. Comisión 8-15%.'},
     // TRÁMITES BANCARIOS
+    {title:'Validar primer cobro real por Square (2.2%)',cat:'bancos',pri:'rd',notes:'Zeller cerró la cuenta. Square es el reemplazo para honorarios AUD. Cobrar una primera transacción real y confirmar depósito para tener cashflow rodado.'},
     {title:'Re-aplicar Airwallex payment gateway',cat:'bancos',pri:'rd',notes:'Primera aplicación rechazada 7/4/2026. Sitio web actualizado. Apelación enviada. Re-aplicar desde Airwallex → Payments → Get started.'},
     {title:'Verificar estado de apelación Airwallex',cat:'bancos',pri:'rd',notes:'Apelación enviada a support@airwallex.com. Verificar respuesta.'},
     {title:'Mantener buffer USD 500-1000 en wallet Airwallex',cat:'bancos',pri:'yw',notes:'Liquidez para cubrir pagos a proveedores antes del settlement del cliente (T+0 a T+5).'},
@@ -678,6 +693,210 @@ function loadDefaultLeads(){
 // ═══════════════════════════════════════════════════════════════
 // AUTH
 // ═══════════════════════════════════════════════════════════════
+function runMigrations(){
+  if(!D.migrations) D.migrations = {};
+  let changed = false;
+
+  if(!D.migrations.comisiones_legacy_apr2026){
+    // Mapea mes en español a número
+    const MONTH_MAP = {
+      'ene':0,'enero':0,'feb':1,'febrero':1,'mar':2,'marzo':2,'abr':3,'abril':3,
+      'may':4,'mayo':4,'jun':5,'junio':5,'jul':6,'julio':6,'ago':7,'agosto':7,
+      'sep':8,'septiembre':8,'oct':9,'octubre':9,'nov':10,'noviembre':10,'dic':11,'diciembre':11
+    };
+    function parseExpectedMonth(fechaViaje, mesCobro){
+      // Primero intenta con mesCobro (más específico)
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      function tryParse(txt, fallbackYear){
+        if(!txt) return null;
+        const s = String(txt).trim();
+        // Formato YYYY-MM-DD o YYYY-MM
+        if(/^\d{4}-\d{2}/.test(s)) return s.slice(0,7);
+        // Formato tipo "Abr", "Mayo 2026", "Jul-Ago", etc
+        const low = s.toLowerCase();
+        for(const k in MONTH_MAP){
+          if(low.indexOf(k) >= 0){
+            const yearMatch = low.match(/(20\d{2})/);
+            const year = yearMatch ? parseInt(yearMatch[1]) : fallbackYear;
+            return year + '-' + String(MONTH_MAP[k]+1).padStart(2,'0');
+          }
+        }
+        return null;
+      }
+      return tryParse(mesCobro, currentYear) || tryParse(fechaViaje, currentYear) || null;
+    }
+
+    let migratedCount = 0;
+    Object.entries(D.clients||{}).forEach(([cid,c])=>{
+      if(!c.commissions) c.commissions = {};
+      // Solo migrar si tiene campo 'comision' con valor > 0
+      const comisionAmount = parseFloat(c.comision) || 0;
+      if(comisionAmount <= 0) return;
+      // No duplicar si ya se migró una con el mismo flag
+      const alreadyMigrated = Object.values(c.commissions).some(cm => cm._migrated_legacy);
+      if(alreadyMigrated) return;
+
+      const expectedMonth = parseExpectedMonth(c.fechaViaje, c.mesCobro) || currentYearMonth();
+      const commId = 'cm_legacy_' + cid + '_' + Date.now();
+      c.commissions[commId] = {
+        name: 'Comisión total (migrada del campo viejo)',
+        provider: 'manual',
+        bookingAmount: 0,
+        netAmount: comisionAmount,
+        rateUsed: 0,
+        archerCut: 0,
+        status: 'pendiente',
+        expectedMonth: expectedMonth,
+        notes: 'Migrada automáticamente desde el campo "comision" del cliente. Revisar y editar si corresponde.' + (c.notes ? ' Notas del cliente: ' + c.notes.slice(0,200) : ''),
+        _migrated_legacy: true,
+        createdAt: Date.now()
+      };
+      migratedCount++;
+    });
+
+    D.migrations.comisiones_legacy_apr2026 = Date.now();
+    changed = true;
+    console.log('[migration] comisiones_legacy_apr2026 — ' + migratedCount + ' comisiones migradas desde campo viejo "comision"');
+  }
+
+  if(!D.migrations.itinerario_seguro_apr2026){
+    const newSteps = [
+      {phase:'itinerario',text:'Diseño de itinerario',tag:'Diseño',key:'itin_diseno'},
+      {phase:'itinerario',text:'Envío de 3 itinerarios al cliente',tag:'Envío',key:'itin_envio3'},
+      {phase:'itinerario',text:'Confirmación de itinerario',tag:'Confirmación',key:'itin_confirm'},
+      {phase:'previaje',text:'Confirmación seguro de viaje',tag:'Seguro',key:'previaje_seguro'},
+    ];
+    Object.values(D.clients||{}).forEach(c=>{
+      if(!c.steps) c.steps = {};
+      newSteps.forEach(ns=>{
+        // Si ya existe un step con el mismo texto, no duplicar
+        const exists = Object.values(c.steps).some(s=>s.text===ns.text);
+        if(!exists){
+          c.steps[ns.key] = {text:ns.text, phase:ns.phase, tag:ns.tag, done:false};
+        }
+      });
+    });
+    D.migrations.itinerario_seguro_apr2026 = Date.now();
+    changed = true;
+    console.log('[migration] itinerario_seguro_apr2026 — agregados pasos a clientes existentes');
+  }
+
+  if(!D.migrations.expenses_2026){
+    if(typeof MONTHLY_EXPENSES !== 'undefined'){
+      // Defaults — recurrentes mensuales
+      Object.entries(MONTHLY_EXPENSES.defaults||{}).forEach(([name,amount],i)=>{
+        const id = 'exp_def_' + i + '_' + Date.now();
+        D.expenses[id] = {
+          name, amount, recurring: 'monthly',
+          category: 'herramienta', notes: '',
+          createdAt: Date.now()
+        };
+      });
+      // Archer — recurrente con rango (ene-jun 2026 según código original)
+      const archerMonths = Object.keys(MONTHLY_EXPENSES.archer||{}).map(Number);
+      if(archerMonths.length){
+        const id = 'exp_arc_' + Date.now();
+        D.expenses[id] = {
+          name: 'Archer Travel', amount: 79, recurring: 'monthly',
+          startMonth: Math.min(...archerMonths), endMonth: Math.max(...archerMonths),
+          category: 'proveedor', notes: 'Sale post-María (julio 2026)',
+          createdAt: Date.now()
+        };
+      }
+      // OneTime — items específicos por mes
+      Object.entries(MONTHLY_EXPENSES.oneTime||{}).forEach(([monthIdx, items])=>{
+        Object.entries(items||{}).forEach(([name,amount],i)=>{
+          const id = 'exp_one_' + monthIdx + '_' + i + '_' + Date.now();
+          D.expenses[id] = {
+            name, amount, month: parseInt(monthIdx),
+            category: 'servicios', notes: '',
+            createdAt: Date.now()
+          };
+        });
+      });
+    }
+    D.migrations.expenses_2026 = Date.now();
+    changed = true;
+    console.log('[migration] expenses_2026 — gastos fijos migrados a D.expenses editable');
+  }
+
+  if(!D.migrations.income_items_2026){
+    const currentYear = new Date().getFullYear();
+    if(typeof PROJECTED_INCOME !== 'undefined'){
+      Object.entries(PROJECTED_INCOME).forEach(([monthIdx, list])=>{
+        const ym = currentYear + '-' + String(parseInt(monthIdx)+1).padStart(2,'0');
+        (list||[]).forEach((p,i)=>{
+          const statusNorm = p.estado === 'cobrado' ? 'cobrada'
+            : (p.estado === 'por cobrar' || p.estado === 'post-checkout' || p.estado === 'pendiente archer') ? 'pendiente'
+            : 'pendiente';
+          const id = 'inc_mig_' + monthIdx + '_' + i + '_' + Date.now();
+          D.incomeItems[id] = {
+            name: p.concepto || 'Sin concepto',
+            amount: p.monto || 0,
+            month: ym,
+            type: p.tipo || 'other',
+            status: statusNorm,
+            notes: (p.estado==='post-checkout' ? 'Post-checkout (post-viaje)' : (p.estado==='pendiente archer' ? 'Pendiente reclamar a Archer' : '')),
+            createdAt: Date.now()
+          };
+        });
+      });
+    }
+    D.migrations.income_items_2026 = Date.now();
+    changed = true;
+    console.log('[migration] income_items_2026 — PROJECTED_INCOME copiado a D.incomeItems editable');
+  }
+
+  if(!D.migrations.lead_stages_apr2026){
+    Object.values(D.leads||{}).forEach(l=>{
+      if(l.stage === 'Seguimiento') l.stage = 'Primer seguimiento';
+    });
+    D.migrations.lead_stages_apr2026 = Date.now();
+    changed = true;
+    console.log('[migration] lead_stages_apr2026 aplicada — leads en Seguimiento movidos a Primer seguimiento');
+  }
+
+  if(!D.migrations.providers_apr2026){
+    const obsoleteTitles = [
+      'Aplicar a Hotelbeds como partner',
+      'Completar aplicacion a Rail Europe',
+      'Completar aplicación a Rail Europe',
+      'Aplicar a Civitatis'
+    ];
+    Object.values(D.tasks||{}).forEach(t=>{
+      if(obsoleteTitles.includes(t.title) && !t.done){
+        t.done = true;
+        t.completedAt = Date.now();
+        t.notes = (t.notes||'') + ' [Auto-completada 21/04/2026: proveedor ya activo]';
+      }
+    });
+    Object.values(D.tasks||{}).forEach(t=>{
+      if(t.title === 'Verificar estado del tramite TIDS' || t.title === 'Verificar estado del trámite TIDS'){
+        t.title = 'TIDS — completar documentación solicitada';
+        t.notes = 'IATA pidió documentación adicional. Destraba Exoticca, CLIA y la salida limpia de Archer. Completar y reenviar.';
+      }
+    });
+    const newTasks = [
+      {title:'Estrenar Hotelbeds con primer cliente',cat:'proveedores',pri:'yw',notes:'Habilitado pero sin primera reserva. Al usarlo, registrar condiciones reales (comisión/markup, pago, velocidad) para comparar con RateHawk/STUBA.'},
+      {title:'Re-enviar follow-up a Expedia TAAP',cat:'proveedores',pri:'yw',notes:'No contestan. Reintentar y, si no responden en 7-10 días, buscar contacto alternativo o postergar.'},
+      {title:'Validar primer cobro real por Square (2.2%)',cat:'bancos',pri:'rd',notes:'Zeller cerró la cuenta. Square es el reemplazo para honorarios AUD. Cobrar una primera transacción real y confirmar depósito para tener cashflow rodado.'}
+    ];
+    const existingTitles = new Set(Object.values(D.tasks||{}).map(t=>t.title));
+    newTasks.forEach((t,i)=>{
+      if(!existingTitles.has(t.title)){
+        const id = 'mig_apr26_'+i;
+        D.tasks[id] = Object.assign({}, t, {done:false, createdAt:Date.now()+i});
+      }
+    });
+    D.migrations.providers_apr2026 = Date.now();
+    changed = true;
+    console.log('[migration] providers_apr2026 aplicada — datos preservados');
+  }
+
+  if(changed) save();
+}
+
 function tryLogin(){
   const pw = document.getElementById('loginPw').value;
   if(pw === ACCESS_PIN){
@@ -766,6 +985,7 @@ function renderCurrent(){
     case 'tareas': renderTareas(); break;
     case 'plantillas': renderPlantillas(); break;
     case 'contenido': renderContenido(); break;
+    case 'stats': renderStats(); break;
     case 'alertas': renderAlertas(); break;
   }
   updateAlertBadge();
@@ -783,7 +1003,7 @@ function ago(ts){
   const d = Math.floor(h/24);
   return 'hace '+d+'d';
 }
-function fmtDate(d){if(!d)return'—';const p=new Date(d);return p.getDate()+'/'+(p.getMonth()+1)}
+function fmtDate(d){if(!d)return'—';const p=new Date(d);if(isNaN(p.getTime()))return'—';return p.getDate()+'/'+(p.getMonth()+1)}
 function isOverdue(dateStr){if(!dateStr)return false;return new Date(dateStr+'T23:59:59')< new Date()}
 function isToday(dateStr){if(!dateStr)return false;return new Date(dateStr).toDateString()===new Date().toDateString()}
 function deadlineClass(dateStr){if(isOverdue(dateStr))return 'overdue';if(isToday(dateStr))return 'today';return 'ok'}
@@ -812,12 +1032,16 @@ function openModal(type, data){
       <div class="fg"><label>Destino</label><input id="ml-dest" placeholder="Ej: Italia 14 días"></div>
       <div class="frow">
         <div class="fg"><label>Canal</label><select id="ml-canal"><option>Instagram</option><option>Referido</option><option>Google</option><option>Web orgánico</option><option>Otro</option></select></div>
-        <div class="fg"><label>Etapa</label><select id="ml-stage">${LEAD_STAGES.slice(0,6).map(s=>'<option>'+s+'</option>').join('')}</select></div>
+        <div class="fg"><label>Etapa</label><select id="ml-stage">${LEAD_STAGES.slice(0,8).map(s=>'<option>'+s+'</option>').join('')}</select></div>
       </div>
       <div class="fg"><label>Ref. contenido (Reel/Post)</label><input id="ml-ref" placeholder="Ej: reel_tailandia_abril"></div>
       <div class="frow">
         <div class="fg"><label>Presupuesto</label><select id="ml-budget"><option>Sin definir</option><option>Hasta USD 1.500</option><option>USD 1.500–2.500</option><option>USD 2.500–4.000</option><option>Más de USD 4.000</option></select></div>
         <div class="fg"><label>Viajeros</label><input id="ml-travelers" type="number" value="2" min="1"></div>
+      </div>
+      <div class="frow">
+        <div class="fg"><label>Fecha salida</label><input id="ml-fecha-salida" type="date"></div>
+        <div class="fg"><label>Fecha regreso</label><input id="ml-fecha-regreso" type="date"></div>
       </div>
       <div class="fg"><label>Notas</label><textarea id="ml-notes" placeholder="Observaciones..."></textarea></div>
       <button class="btn1" onclick="saveLead()">Guardar lead</button>
@@ -841,6 +1065,10 @@ function openModal(type, data){
       <div class="frow">
         <div class="fg"><label>Presupuesto</label><select id="ml-budget">${['Sin definir','Hasta USD 1.500','USD 1.500–2.500','USD 2.500–4.000','Más de USD 4.000'].map(b=>'<option'+(b===l.budget?' selected':'')+'>'+b+'</option>').join('')}</select></div>
         <div class="fg"><label>Viajeros</label><input id="ml-travelers" type="number" value="${l.travelers||2}" min="1"></div>
+      </div>
+      <div class="frow">
+        <div class="fg"><label>Fecha salida</label><input id="ml-fecha-salida" type="date" value="${l.fechaSalida||''}"></div>
+        <div class="fg"><label>Fecha regreso</label><input id="ml-fecha-regreso" type="date" value="${l.fechaRegreso||''}"></div>
       </div>
       <div class="fg"><label>Notas</label><textarea id="ml-notes">${l.notes||''}</textarea></div>
       <button class="btn1" onclick="updateLead('${l._id}')">Guardar cambios</button>
@@ -899,7 +1127,7 @@ function openModal(type, data){
         <div class="fg"><label>Monto USD</label><input id="mpay-amount" type="number" step="0.01" placeholder="0.00"></div>
       </div>
       <div class="frow">
-        <div class="fg"><label>Método</label><select id="mpay-method"><option>Airwallex link</option><option>RateHawk directo</option><option>Transferencia</option><option>USDT</option><option>Stripe</option></select></div>
+        <div class="fg"><label>Método</label><select id="mpay-method"><option>Square (AUD)</option><option>Airwallex link</option><option>Stripe</option><option>RateHawk directo</option><option>Transferencia</option><option>USDT</option></select></div>
         <div class="fg"><label>Estado</label><select id="mpay-status"><option>Cobrado</option><option>Pendiente</option><option>En settlement</option></select></div>
       </div>
       <div class="fg"><label>Fecha</label><input id="mpay-date" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
@@ -907,6 +1135,70 @@ function openModal(type, data){
       <button class="btn2" onclick="closeModal()">Cancelar</button>`;
   }
   
+    else if(type==='addExpense'){
+    const monthNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const curMonth = (typeof cashMonth==='number'?cashMonth:new Date().getMonth());
+    const monthOpts = (sel)=>monthNames.map((n,i)=>'<option value="'+i+'"'+(i===sel?' selected':'')+'>'+n+'</option>').join('');
+    m.innerHTML=`<h3>Nuevo gasto</h3>
+      <div class="fg"><label>Nombre</label><input id="mex-name" placeholder="Ej: Dominio, Hosting, Publicidad"></div>
+      <div class="fg"><label>Monto USD</label><input id="mex-amount" type="number" step="0.01" placeholder="0.00"></div>
+      <div class="fg"><label>Frecuencia</label><select id="mex-freq" onchange="document.getElementById('mex-month-wrap').style.display=this.value==='once'?'flex':'none';document.getElementById('mex-range-wrap').style.display=this.value==='range'?'flex':'none'">
+        <option value="monthly">🔄 Todos los meses</option>
+        <option value="once" selected>📅 Solo un mes</option>
+        <option value="range">📆 Rango de meses</option>
+      </select></div>
+      <div class="frow" id="mex-month-wrap"><div class="fg"><label>Mes</label><select id="mex-month">${monthOpts(curMonth)}</select></div></div>
+      <div class="frow" id="mex-range-wrap" style="display:none">
+        <div class="fg"><label>Desde</label><select id="mex-start">${monthOpts(0)}</select></div>
+        <div class="fg"><label>Hasta</label><select id="mex-end">${monthOpts(11)}</select></div>
+      </div>
+      <div class="fg"><label>Categoría</label><select id="mex-category"><option value="herramienta">🛠️ Herramienta</option><option value="proveedor">🏨 Proveedor</option><option value="marketing">📣 Marketing</option><option value="impuestos">🧾 Impuestos</option><option value="servicios">💼 Servicios profesionales</option><option value="otros" selected>📦 Otros</option></select></div>
+      <div class="fg"><label>Notas</label><textarea id="mex-notes" placeholder="Opcional..."></textarea></div>
+      <button class="btn1" onclick="saveExpense()">Guardar gasto</button>
+      <button class="btn2" onclick="closeModal()">Cancelar</button>`;
+  }
+
+  else if(type==='editExpense'){
+    const e = data;
+    const fullExp = D.expenses[e._id] || e;
+    const monthNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const monthOpts = (sel)=>monthNames.map((n,i)=>'<option value="'+i+'"'+(i===sel?' selected':'')+'>'+n+'</option>').join('');
+    const cats = [
+      {id:'herramienta',label:'🛠️ Herramienta'},
+      {id:'proveedor',label:'🏨 Proveedor'},
+      {id:'marketing',label:'📣 Marketing'},
+      {id:'impuestos',label:'🧾 Impuestos'},
+      {id:'servicios',label:'💼 Servicios profesionales'},
+      {id:'otros',label:'📦 Otros'}
+    ];
+    const catOpts = cats.map(c=>'<option value="'+c.id+'"'+(c.id===(fullExp.category||'otros')?' selected':'')+'>'+c.label+'</option>').join('');
+    let freq = 'once';
+    if(fullExp.recurring === 'monthly'){
+      freq = (fullExp.startMonth !== undefined || fullExp.endMonth !== undefined) ? 'range' : 'monthly';
+    }
+    const sm = fullExp.startMonth !== undefined ? fullExp.startMonth : 0;
+    const em = fullExp.endMonth !== undefined ? fullExp.endMonth : 11;
+    const monthVal = fullExp.month !== undefined ? fullExp.month : 0;
+    m.innerHTML=`<h3>Editar gasto</h3>
+      <div class="fg"><label>Nombre</label><input id="mex-name" value="${(fullExp.name||'').replace(/"/g,'&quot;')}"></div>
+      <div class="fg"><label>Monto USD</label><input id="mex-amount" type="number" step="0.01" value="${fullExp.amount||0}"></div>
+      <div class="fg"><label>Frecuencia</label><select id="mex-freq" onchange="document.getElementById('mex-month-wrap').style.display=this.value==='once'?'flex':'none';document.getElementById('mex-range-wrap').style.display=this.value==='range'?'flex':'none'">
+        <option value="monthly"${freq==='monthly'?' selected':''}>🔄 Todos los meses</option>
+        <option value="once"${freq==='once'?' selected':''}>📅 Solo un mes</option>
+        <option value="range"${freq==='range'?' selected':''}>📆 Rango de meses</option>
+      </select></div>
+      <div class="frow" id="mex-month-wrap" style="display:${freq==='once'?'flex':'none'}"><div class="fg"><label>Mes</label><select id="mex-month">${monthOpts(monthVal)}</select></div></div>
+      <div class="frow" id="mex-range-wrap" style="display:${freq==='range'?'flex':'none'}">
+        <div class="fg"><label>Desde</label><select id="mex-start">${monthOpts(sm)}</select></div>
+        <div class="fg"><label>Hasta</label><select id="mex-end">${monthOpts(em)}</select></div>
+      </div>
+      <div class="fg"><label>Categoría</label><select id="mex-category">${catOpts}</select></div>
+      <div class="fg"><label>Notas</label><textarea id="mex-notes">${fullExp.notes||''}</textarea></div>
+      <button class="btn1" onclick="editExpense('${e._id}')">Guardar cambios</button>
+      <button class="btn-del" onclick="deleteExpense('${e._id}');closeModal()">Eliminar</button>
+      <button class="btn2" onclick="closeModal()">Cancelar</button>`;
+  }
+
   bg.classList.add('on');
 }
 
@@ -929,6 +1221,8 @@ function saveLead(){
     budget:document.getElementById('ml-budget').value,
     travelers:parseInt(document.getElementById('ml-travelers').value)||2,
     notes:document.getElementById('ml-notes').value,
+    fechaSalida:document.getElementById('ml-fecha-salida').value,
+    fechaRegreso:document.getElementById('ml-fecha-regreso').value,
     createdAt:Date.now(), contactedAt:null
   };
   save(); closeModal(); showNotif('Lead "'+name+'" creado ✈️');
@@ -948,6 +1242,8 @@ function updateLead(id){
     budget:document.getElementById('ml-budget').value,
     travelers:parseInt(document.getElementById('ml-travelers').value)||2,
     notes:document.getElementById('ml-notes').value,
+    fechaSalida:document.getElementById('ml-fecha-salida').value,
+    fechaRegreso:document.getElementById('ml-fecha-regreso').value,
   };
   const newStage = document.getElementById('ml-stage').value;
   if(newStage!=='Lead' && !D.leads[id].contactedAt){
@@ -1070,6 +1366,632 @@ function savePayment(){
   renderCurrent();
 }
 
+function saveExpense(){
+  const name = document.getElementById('mex-name').value.trim();
+  const amount = parseFloat(document.getElementById('mex-amount').value);
+  const freq = document.getElementById('mex-freq').value;
+  if(!name){showNotif('Ingresá el nombre');return}
+  if(!amount || amount<=0){showNotif('Monto inválido');return}
+  const id = uid();
+  const baseObj = {
+    name, amount,
+    category: document.getElementById('mex-category').value || 'otros',
+    notes: document.getElementById('mex-notes').value || '',
+    createdAt: Date.now()
+  };
+  if(freq === 'monthly'){
+    baseObj.recurring = 'monthly';
+  } else if(freq === 'range'){
+    baseObj.recurring = 'monthly';
+    baseObj.startMonth = parseInt(document.getElementById('mex-start').value);
+    baseObj.endMonth = parseInt(document.getElementById('mex-end').value);
+  } else {
+    baseObj.month = parseInt(document.getElementById('mex-month').value);
+    if(isNaN(baseObj.month) || baseObj.month<0 || baseObj.month>11){showNotif('Mes inválido');return}
+  }
+  D.expenses[id] = baseObj;
+  save(); closeModal(); showNotif('Gasto agregado ✓');
+  renderCurrent();
+}
+
+function editExpense(id){
+  const ex = D.expenses[id];
+  if(!ex){showNotif('Gasto no encontrado');return}
+  const name = document.getElementById('mex-name').value.trim();
+  const amount = parseFloat(document.getElementById('mex-amount').value);
+  const freq = document.getElementById('mex-freq').value;
+  if(!name){showNotif('Ingresá el nombre');return}
+  if(!amount || amount<=0){showNotif('Monto inválido');return}
+  const updated = {
+    ...ex,
+    name, amount,
+    category: document.getElementById('mex-category').value || 'otros',
+    notes: document.getElementById('mex-notes').value || '',
+    updatedAt: Date.now()
+  };
+  // Limpiar campos previos de frecuencia
+  delete updated.recurring;
+  delete updated.startMonth;
+  delete updated.endMonth;
+  delete updated.month;
+  if(freq === 'monthly'){
+    updated.recurring = 'monthly';
+  } else if(freq === 'range'){
+    updated.recurring = 'monthly';
+    updated.startMonth = parseInt(document.getElementById('mex-start').value);
+    updated.endMonth = parseInt(document.getElementById('mex-end').value);
+  } else {
+    updated.month = parseInt(document.getElementById('mex-month').value);
+    if(isNaN(updated.month) || updated.month<0 || updated.month>11){showNotif('Mes inválido');return}
+  }
+  D.expenses[id] = updated;
+  save(); closeModal(); showNotif('Gasto actualizado ✓');
+  renderCurrent();
+}
+
+function deleteExpense(id){
+  if(!D.expenses[id]){return}
+  if(!confirm('¿Borrar este gasto?')) return;
+  delete D.expenses[id];
+  save(); showNotif('Gasto eliminado');
+  renderCurrent();
+}
+
+
+// ── CashFlow helpers ──────────────────────────────────────────
+function currentYearMonth(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+}
+
+function buildMonthOptions(selectedYM){
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth()-3, 1);
+  const months = [];
+  const mNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  for(let i=0;i<22;i++){
+    const d = new Date(start.getFullYear(), start.getMonth()+i, 1);
+    const ym = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+    const label = mNames[d.getMonth()] + ' ' + d.getFullYear();
+    months.push({ym,label});
+  }
+  const sel = selectedYM || currentYearMonth();
+  return months.map(m=>`<option value="${m.ym}"${m.ym===sel?' selected':''}>${m.label}</option>`).join('');
+}
+
+function ymToLabel(ym){
+  if(!ym) return '—';
+  const parts = String(ym).split('-');
+  if(parts.length!==2) return ym;
+  const mNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const mi = parseInt(parts[1])-1;
+  if(mi<0||mi>11) return ym;
+  return mNames[mi] + " '" + parts[0].slice(2);
+}
+
+function buildCashflowItems(){
+  const items = [];
+  Object.entries(D.clients||{}).forEach(([cid,c])=>{
+    const clientName = c.name || '—';
+    if((c.feeCobrado||0) > 0){
+      items.push({
+        type:'fee',
+        name:'Fee ' + clientName + ' cobrado',
+        amount: c.feeCobrado,
+        month: c.feeCobradoMonth || null,
+        status: 'cobrada',
+        clientId: cid,
+        category: 'Confirmados'
+      });
+    }
+    if((c.feePendiente||0) > 0){
+      items.push({
+        type:'fee',
+        name:'Fee ' + clientName + ' pendiente',
+        amount: c.feePendiente,
+        month: c.feeExpectedMonth || null,
+        status: 'pendiente',
+        clientId: cid,
+        category: 'Confirmados'
+      });
+    }
+    if(c.commissions){
+      Object.entries(c.commissions).forEach(([cmid,cm])=>{
+        items.push({
+          type:'commission',
+          name:'Com ' + clientName + ' — ' + (cm.name||'sin nombre'),
+          amount: cm.netAmount || 0,
+          month: cm.expectedMonth || null,
+          status: cm.status==='cobrada' ? 'cobrada' : 'pendiente',
+          clientId: cid,
+          commId: cmid,
+          category: 'Confirmados'
+        });
+      });
+    }
+  });
+  // D.incomeItems — items editables (migrados desde el PROJECTED_INCOME del Excel)
+  Object.entries(D.incomeItems||{}).forEach(([iid,it])=>{
+    items.push({
+      type: it.type || 'other',
+      name: it.name || 'Sin concepto',
+      amount: it.amount || 0,
+      month: it.month || null,
+      status: it.status || 'pendiente',
+      incomeItemId: iid,
+      notes: it.notes || '',
+      category: 'Confirmados'
+    });
+  });
+
+  Object.entries(D.projectedRevenue||{}).forEach(([pid,p])=>{
+    items.push({
+      type: p.type || 'other',
+      name: p.name || 'Sin nombre',
+      amount: p.amount || 0,
+      month: p.month || null,
+      status: 'proyectado',
+      projectedId: pid,
+      category: 'Probables'
+    });
+  });
+  return items;
+}
+
+function yearMonths(year){
+  year = year || new Date().getFullYear();
+  const out = [];
+  for(let i=0;i<12;i++) out.push(year + '-' + String(i+1).padStart(2,'0'));
+  return out;
+}
+
+function svgBarChart(data, height){
+  height = height || 200;
+  const width = 800;
+  const padL=40, padR=10, padT=10, padB=24;
+  const innerW = width - padL - padR;
+  const innerH = height - padT - padB;
+  const max = Math.max(1, ...data.map(d=>Math.max(d.income||0, d.expense||0)));
+  const gap = innerW / data.length;
+  const barW = gap / 2.5;
+  let bars = '', labels = '';
+  data.forEach((d,i)=>{
+    const cx = padL + gap*i + gap/2;
+    const hIn = ((d.income||0)/max) * innerH;
+    const hEx = ((d.expense||0)/max) * innerH;
+    bars += `<rect x="${cx-barW-1}" y="${padT+innerH-hIn}" width="${barW}" height="${hIn}" fill="#3ea66b" rx="2"></rect>`;
+    bars += `<rect x="${cx+1}" y="${padT+innerH-hEx}" width="${barW}" height="${hEx}" fill="#d45a5a" rx="2"></rect>`;
+    labels += `<text x="${cx}" y="${height-6}" text-anchor="middle" font-size="10" fill="#9aa4b2">${d.label}</text>`;
+  });
+  const axis = `<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT+innerH}" stroke="#2a3142" stroke-width="1"/><line x1="${padL}" y1="${padT+innerH}" x2="${width-padR}" y2="${padT+innerH}" stroke="#2a3142" stroke-width="1"/>`;
+  const maxLabel = `<text x="${padL-4}" y="${padT+8}" text-anchor="end" font-size="10" fill="#9aa4b2">USD ${Math.round(max).toLocaleString()}</text>`;
+  return `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:${height}px">${axis}${maxLabel}${bars}${labels}</svg>`;
+}
+
+function svgLineChart(points, height){
+  height = height || 200;
+  const width = 800;
+  const padL=50, padR=10, padT=10, padB=24;
+  const innerW = width - padL - padR;
+  const innerH = height - padT - padB;
+  const vals = points.map(p=>p.value);
+  const min = Math.min(0, ...vals);
+  const max = Math.max(0, ...vals);
+  const range = (max-min) || 1;
+  const step = innerW / Math.max(1, points.length-1);
+  let path = '', dots = '', labels = '';
+  points.forEach((p,i)=>{
+    const x = padL + step*i;
+    const y = padT + innerH - ((p.value-min)/range)*innerH;
+    path += (i===0?'M':'L') + x + ',' + y + ' ';
+    dots += `<circle cx="${x}" cy="${y}" r="3" fill="#e0b64a"/>`;
+    labels += `<text x="${x}" y="${height-6}" text-anchor="middle" font-size="10" fill="#9aa4b2">${p.label}</text>`;
+  });
+  const zeroY = padT + innerH - ((0-min)/range)*innerH;
+  const zeroLine = `<line x1="${padL}" y1="${zeroY}" x2="${width-padR}" y2="${zeroY}" stroke="#2a3142" stroke-dasharray="3,3" stroke-width="1"/>`;
+  const line = `<path d="${path}" stroke="#e0b64a" stroke-width="2" fill="none"/>`;
+  const minLabel = `<text x="${padL-4}" y="${padT+innerH}" text-anchor="end" font-size="10" fill="#9aa4b2">${Math.round(min).toLocaleString()}</text>`;
+  const maxLabel = `<text x="${padL-4}" y="${padT+8}" text-anchor="end" font-size="10" fill="#9aa4b2">${Math.round(max).toLocaleString()}</text>`;
+  return `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:${height}px">${zeroLine}${line}${dots}${labels}${minLabel}${maxLabel}</svg>`;
+}
+
+function openProjectedModal(id){
+  const p = id ? D.projectedRevenue[id] : null;
+  const m = document.getElementById('modalContent');
+  m.innerHTML = `<h3>${p?'Editar':'Nueva'} proyección probable</h3>
+    <div class="fg"><label>Nombre / Concepto</label><input id="mpr-name" placeholder="Ej: Fee Cliente X 50%" value="${p?(p.name||''):''}"></div>
+    <div class="frow">
+      <div class="fg"><label>Monto USD</label><input id="mpr-amount" type="number" step="0.01" value="${p?(p.amount||0):''}"></div>
+      <div class="fg"><label>Mes</label><select id="mpr-month">${buildMonthOptions(p?p.month:null)}</select></div>
+    </div>
+    <div class="fg"><label>Tipo</label><select id="mpr-type"><option value="fee"${p&&p.type==='fee'?' selected':''}>Fee de cliente</option><option value="commission"${p&&p.type==='commission'?' selected':''}>Comisión</option><option value="other"${p&&p.type==='other'?' selected':''}>Otro</option></select></div>
+    <div class="fg"><label>Notas</label><textarea id="mpr-notes">${p?(p.notes||''):''}</textarea></div>
+    <button class="btn1" onclick="saveProjected('${id||''}')">Guardar</button>
+    ${id?`<button class="btn-del" onclick="deleteProjected('${id}')">Eliminar</button>`:''}
+    <button class="btn2" onclick="closeModal()">Cancelar</button>`;
+  document.getElementById('modalBg').classList.add('on');
+}
+
+function saveProjected(id){
+  const name = document.getElementById('mpr-name').value.trim();
+  const amount = parseFloat(document.getElementById('mpr-amount').value)||0;
+  const month = document.getElementById('mpr-month').value;
+  const type = document.getElementById('mpr-type').value;
+  const notes = document.getElementById('mpr-notes').value;
+  if(!name){showNotif('Ingresá el nombre');return}
+  if(amount<=0){showNotif('Monto inválido');return}
+  const pid = id || ('prj_'+uid());
+  const existing = D.projectedRevenue[pid] || {};
+  D.projectedRevenue[pid] = {name,amount,month,type,notes,createdAt:existing.createdAt||Date.now(),updatedAt:Date.now()};
+  save(); closeModal(); showNotif(id?'Proyección actualizada ✓':'Proyección agregada ✓');
+  renderCurrent();
+}
+
+function deleteProjected(id){
+  if(!confirm('¿Borrar esta proyección?')) return;
+  delete D.projectedRevenue[id];
+  save(); closeModal(); showNotif('Proyección eliminada');
+  renderCurrent();
+}
+
+
+
+// ── Income items (editables) ────────────────────────────────
+function openIncomeItemModal(id){
+  const it = id ? D.incomeItems[id] : null;
+  const m = document.getElementById('modalContent');
+  m.innerHTML = `<h3>${it?'Editar':'Nuevo'} ingreso</h3>
+    <div class="fg"><label>Concepto</label><input id="mii-name" value="${it?(it.name||'').replace(/"/g,'&quot;'):''}" placeholder="Ej: Fee Cliente X 50%"></div>
+    <div class="frow">
+      <div class="fg"><label>Monto USD</label><input id="mii-amount" type="number" step="0.01" value="${it?(it.amount||0):''}"></div>
+      <div class="fg"><label>Mes</label><select id="mii-month">${buildMonthOptions(it?it.month:null)}</select></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>Tipo</label><select id="mii-type">
+        <option value="fee"${it&&it.type==='fee'?' selected':''}>Fee cliente</option>
+        <option value="commission"${it&&it.type==='commission'?' selected':''}>Comisión</option>
+        <option value="devolucion"${it&&it.type==='devolucion'?' selected':''}>Devolución</option>
+        <option value="other"${it&&it.type==='other'?' selected':''}>Otro</option>
+      </select></div>
+      <div class="fg"><label>Estado</label><select id="mii-status">
+        <option value="pendiente"${!it||it.status!=='cobrada'?' selected':''}>⏳ Pendiente</option>
+        <option value="cobrada"${it&&it.status==='cobrada'?' selected':''}>💰 Cobrada</option>
+      </select></div>
+    </div>
+    <div class="fg"><label>Notas</label><textarea id="mii-notes">${it?(it.notes||''):''}</textarea></div>
+    <button class="btn1" onclick="saveIncomeItem('${id||''}')">Guardar</button>
+    ${id?`<button class="btn-del" onclick="deleteIncomeItem('${id}')">Eliminar</button>`:''}
+    <button class="btn2" onclick="closeModal()">Cancelar</button>`;
+  document.getElementById('modalBg').classList.add('on');
+}
+
+function saveIncomeItem(id){
+  const name = document.getElementById('mii-name').value.trim();
+  const amount = parseFloat(document.getElementById('mii-amount').value)||0;
+  const month = document.getElementById('mii-month').value;
+  const type = document.getElementById('mii-type').value;
+  const status = document.getElementById('mii-status').value;
+  const notes = document.getElementById('mii-notes').value;
+  if(!name){showNotif('Ingresá el concepto');return}
+  if(amount<=0){showNotif('Monto inválido');return}
+
+  const iid = id || ('inc_'+uid());
+  const existing = D.incomeItems[iid] || {};
+  const wasCobrada = existing.status === 'cobrada';
+  const willBeCobrada = status === 'cobrada';
+
+  D.incomeItems[iid] = {
+    name, amount, month, type, status, notes,
+    createdAt: existing.createdAt || Date.now(),
+    updatedAt: Date.now()
+  };
+
+  // Si pasó a cobrada, auto-registrar en Movimientos
+  if(!wasCobrada && willBeCobrada){
+    const payId = 'pay_' + uid();
+    D.payments[payId] = {
+      clientId: '',
+      concept: name,
+      amount: amount,
+      method: 'Auto (desde CashFlow)',
+      status: 'Cobrado',
+      date: new Date().toISOString().slice(0,10),
+      createdAt: Date.now(),
+      autoFromIncomeItem: iid
+    };
+    D.incomeItems[iid].autoPaymentId = payId;
+  }
+  // Si volvió a pendiente, borrar el payment auto
+  if(wasCobrada && !willBeCobrada && existing.autoPaymentId){
+    if(D.payments[existing.autoPaymentId]) delete D.payments[existing.autoPaymentId];
+    delete D.incomeItems[iid].autoPaymentId;
+  }
+
+  save(); closeModal(); showNotif(id?'Ingreso actualizado ✓':'Ingreso agregado ✓');
+  renderCurrent();
+}
+
+function deleteIncomeItem(id){
+  if(!confirm('¿Borrar este ingreso?')) return;
+  const it = D.incomeItems[id];
+  if(it && it.autoPaymentId && D.payments[it.autoPaymentId]){
+    delete D.payments[it.autoPaymentId];
+  }
+  delete D.incomeItems[id];
+  save(); closeModal(); showNotif('Ingreso eliminado');
+  renderCurrent();
+}
+
+// Atajo: marcar un ingreso como cobrado con 1 click
+function markIncomeItemCobrado(id){
+  const it = D.incomeItems[id];
+  if(!it) return;
+  if(it.status === 'cobrada'){
+    // Volver a pendiente
+    if(!confirm('¿Volver "' + it.name + '" a pendiente?')) return;
+    if(it.autoPaymentId && D.payments[it.autoPaymentId]){
+      delete D.payments[it.autoPaymentId];
+    }
+    it.status = 'pendiente';
+    delete it.autoPaymentId;
+    save(); showNotif('⏳ Vuelto a pendiente');
+  } else {
+    if(!confirm('¿Marcar "' + it.name + '" como cobrado (USD ' + it.amount + ')?')) return;
+    it.status = 'cobrada';
+    const payId = 'pay_' + uid();
+    D.payments[payId] = {
+      clientId: '',
+      concept: it.name,
+      amount: it.amount,
+      method: 'Auto (desde CashFlow)',
+      status: 'Cobrado',
+      date: new Date().toISOString().slice(0,10),
+      createdAt: Date.now(),
+      autoFromIncomeItem: id
+    };
+    it.autoPaymentId = payId;
+    save(); showNotif('💰 USD ' + it.amount + ' marcado como cobrado');
+  }
+  renderCurrent();
+}
+
+
+function deleteClient(clientId){
+  const c = D.clients[clientId];
+  if(!c) return;
+  const name = c.name || 'cliente sin nombre';
+  const paymentsCount = Object.values(D.payments||{}).filter(p=>p.clientId===clientId).length;
+  const commissionsCount = c.commissions ? Object.keys(c.commissions).length : 0;
+
+  const msg1 = '¿Eliminar DEFINITIVAMENTE a "' + name + '"?\n\n'
+    + 'Se borrarán:\n'
+    + '• El cliente completo (datos, checklist, notas)\n'
+    + '• ' + commissionsCount + ' comisión(es)\n'
+    + '• ' + paymentsCount + ' movimiento(s) de pago asociado(s)\n\n'
+    + 'Si querés mantener registro histórico, cancelá y marcalo como "Perdido".\n\n'
+    + '¿Continuar?';
+  if(!confirm(msg1)) return;
+
+  const msg2 = 'Última confirmación — escribí el nombre del cliente para eliminar.\n\nNombre: ' + name;
+  const typed = prompt(msg2);
+  if(typed !== name){
+    showNotif('Nombre no coincide. Cancelado.');
+    return;
+  }
+
+  // Borrar payments relacionados
+  Object.keys(D.payments||{}).forEach(pid=>{
+    if(D.payments[pid].clientId === clientId) delete D.payments[pid];
+  });
+  // Borrar cliente
+  delete D.clients[clientId];
+  save();
+  showNotif('🗑 ' + name + ' eliminado definitivamente');
+  go('clientes');
+}
+
+// ── Dedupe y flujo cobrado ────────────────────────────────────
+function normalizeKey(s){ return String(s||'').trim().toLowerCase().replace(/\s+/g,' '); }
+
+function dedupeClients(){
+  const clients = Object.entries(D.clients).map(([id,c])=>({...c,_id:id}));
+  const groups = {};
+  clients.forEach(c=>{
+    const key = normalizeKey(c.name) + '||' + normalizeKey(c.email||c.phone||'');
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(c);
+  });
+  const dupes = Object.values(groups).filter(g => g.length > 1);
+  if(!dupes.length){ showNotif('Sin duplicados en clientes 👍'); return; }
+  let toDelete = [];
+  let preview = [];
+  dupes.forEach(g=>{
+    g.sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+    const keep = g[0];
+    const remove = g.slice(1);
+    preview.push('• "' + keep.name + '" — ' + remove.length + ' duplicado(s) → borrar');
+    remove.forEach(r=>toDelete.push(r._id));
+  });
+  const msg = 'Se detectaron ' + toDelete.length + ' duplicados:\n\n' + preview.join('\n') + '\n\n¿Continuar? (deja el más antiguo en cada grupo)';
+  if(!confirm(msg)) return;
+  toDelete.forEach(id => delete D.clients[id]);
+  save();
+  showNotif('🧹 ' + toDelete.length + ' clientes duplicados eliminados');
+  renderCurrent();
+}
+
+function dedupeLeads(){
+  const leads = Object.entries(D.leads).map(([id,l])=>({...l,_id:id}));
+  const groups = {};
+  leads.forEach(l=>{
+    const key = normalizeKey(l.name) + '||' + normalizeKey(l.email||l.phone||'');
+    if(!groups[key]) groups[key] = [];
+    groups[key].push(l);
+  });
+  const dupes = Object.values(groups).filter(g => g.length > 1);
+  if(!dupes.length){ showNotif('Sin duplicados en leads 👍'); return; }
+  let toDelete = [];
+  let preview = [];
+  dupes.forEach(g=>{
+    g.sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+    const keep = g[0];
+    const remove = g.slice(1);
+    preview.push('• "' + keep.name + '" — ' + remove.length + ' duplicado(s) → borrar');
+    remove.forEach(r=>toDelete.push(r._id));
+  });
+  const msg = 'Se detectaron ' + toDelete.length + ' duplicados:\n\n' + preview.join('\n') + '\n\n¿Continuar? (deja el más antiguo en cada grupo)';
+  if(!confirm(msg)) return;
+  toDelete.forEach(id => delete D.leads[id]);
+  save();
+  showNotif('🧹 ' + toDelete.length + ' leads duplicados eliminados');
+  renderCurrent();
+}
+
+// Marca fee o comisión como cobrada y crea movimiento automático
+function markFeeCobrado(clientId){
+  const c = D.clients[clientId];
+  if(!c) return;
+  const pending = c.feePendiente || 0;
+  if(pending <= 0){ showNotif('No hay fee pendiente'); return; }
+  if(!confirm('¿Marcar USD ' + pending + ' de fee de ' + c.name + ' como cobrado?')) return;
+  c.feeCobrado = (c.feeCobrado || 0) + pending;
+  c.feePendiente = 0;
+  c.feeCobradoMonth = c.feeCobradoMonth || currentYearMonth();
+  // Auto-registrar movimiento
+  const payId = 'pay_' + uid();
+  D.payments[payId] = {
+    clientId,
+    concept: 'Fee ' + c.name + ' (auto)',
+    amount: pending,
+    method: 'Auto-registrado',
+    status: 'Cobrado',
+    date: new Date().toISOString().slice(0,10),
+    createdAt: Date.now(),
+    autoFromFee: true
+  };
+  save();
+  showNotif('💰 USD ' + pending + ' marcado como cobrado');
+  renderCurrent();
+}
+
+function markCommissionCobrada(clientId, commId){
+  const c = D.clients[clientId];
+  if(!c || !c.commissions || !c.commissions[commId]) return;
+  const cm = c.commissions[commId];
+  if(cm.status === 'cobrada'){
+    // Volver a pendiente
+    cm.status = 'pendiente';
+    delete cm.cobradoMonth;
+    // Borrar el payment auto-generado si existe
+    const autoId = cm.autoPaymentId;
+    if(autoId && D.payments[autoId]){ delete D.payments[autoId]; }
+    delete cm.autoPaymentId;
+    save();
+    showNotif('⏳ Comisión vuelta a pendiente');
+  } else {
+    cm.status = 'cobrada';
+    cm.cobradoMonth = currentYearMonth();
+    // Registrar movimiento
+    const payId = 'pay_' + uid();
+    D.payments[payId] = {
+      clientId,
+      concept: 'Com ' + c.name + ' — ' + (cm.name||'s/n') + ' (auto)',
+      amount: cm.netAmount || 0,
+      method: 'Auto-registrado',
+      status: 'Cobrado',
+      date: new Date().toISOString().slice(0,10),
+      createdAt: Date.now(),
+      autoFromCommission: true
+    };
+    cm.autoPaymentId = payId;
+    save();
+    showNotif('💰 Comisión marcada cobrada — USD ' + (cm.netAmount||0).toFixed(2));
+  }
+  renderCurrent();
+}
+
+// Editar expectedMonth de una comisión (click sobre la fila en cliente detail)
+function editCommissionMonth(clientId, commId){
+  const c = D.clients[clientId];
+  if(!c || !c.commissions || !c.commissions[commId]) return;
+  const cm = c.commissions[commId];
+  const m = document.getElementById('modalContent');
+  m.innerHTML = `<h3>Editar comisión</h3>
+    <div class="fg"><label>Nombre</label><input id="mce-name" value="${(cm.name||'').replace(/"/g,'&quot;')}"></div>
+    <div class="frow">
+      <div class="fg"><label>Monto neto USD</label><input id="mce-amount" type="number" step="0.01" value="${cm.netAmount||0}"></div>
+      <div class="fg"><label>Mes esperado cobro</label><select id="mce-month">${buildMonthOptions(cm.expectedMonth)}</select></div>
+    </div>
+    <div class="fg"><label>Estado</label><select id="mce-status"><option value="pendiente"${cm.status!=='cobrada'?' selected':''}>⏳ Pendiente</option><option value="cobrada"${cm.status==='cobrada'?' selected':''}>💰 Cobrada</option></select></div>
+    <button class="btn1" onclick="saveCommissionEdit('${clientId}','${commId}')">Guardar</button>
+    <button class="btn-del" onclick="deleteCommission('${clientId}','${commId}')">Eliminar</button>
+    <button class="btn2" onclick="closeModal()">Cancelar</button>`;
+  document.getElementById('modalBg').classList.add('on');
+}
+
+function saveCommissionEdit(clientId, commId){
+  const cm = D.clients[clientId].commissions[commId];
+  cm.name = document.getElementById('mce-name').value.trim() || cm.name;
+  cm.netAmount = parseFloat(document.getElementById('mce-amount').value) || cm.netAmount;
+  cm.expectedMonth = document.getElementById('mce-month').value;
+  const newStatus = document.getElementById('mce-status').value;
+  if(newStatus !== cm.status){
+    if(newStatus === 'cobrada'){
+      markCommissionCobrada(clientId, commId);
+      closeModal();
+      return;
+    } else {
+      if(cm.autoPaymentId && D.payments[cm.autoPaymentId]){ delete D.payments[cm.autoPaymentId]; }
+      delete cm.autoPaymentId;
+      cm.status = 'pendiente';
+      delete cm.cobradoMonth;
+    }
+  }
+  save(); closeModal(); showNotif('Comisión actualizada ✓');
+  renderCurrent();
+}
+
+function deleteCommission(clientId, commId){
+  if(!confirm('¿Borrar esta comisión?')) return;
+  const cm = D.clients[clientId].commissions[commId];
+  if(cm && cm.autoPaymentId && D.payments[cm.autoPaymentId]){ delete D.payments[cm.autoPaymentId]; }
+  delete D.clients[clientId].commissions[commId];
+  save(); closeModal(); showNotif('Comisión eliminada');
+  renderCurrent();
+}
+
+// Editar el mes esperado del fee pendiente del cliente
+function editClientFee(clientId){
+  const c = D.clients[clientId];
+  if(!c) return;
+  const m = document.getElementById('modalContent');
+  m.innerHTML = `<h3>Fee de ${c.name}</h3>
+    <div class="frow">
+      <div class="fg"><label>Fee total</label><input id="mfe-total" type="number" step="0.01" value="${c.fee||0}"></div>
+      <div class="fg"><label>Cobrado</label><input id="mfe-cobrado" type="number" step="0.01" value="${c.feeCobrado||0}"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>Pendiente</label><input id="mfe-pendiente" type="number" step="0.01" value="${c.feePendiente||0}"></div>
+      <div class="fg"><label>Mes esperado cobro</label><select id="mfe-expected">${buildMonthOptions(c.feeExpectedMonth)}</select></div>
+    </div>
+    <div class="fg"><label>Mes en que se cobró (si ya cobrado)</label><select id="mfe-cobrado-mes">${buildMonthOptions(c.feeCobradoMonth)}</select></div>
+    <button class="btn1" onclick="saveClientFee('${clientId}')">Guardar</button>
+    ${(c.feePendiente||0) > 0 ? `<button class="btn2" onclick="markFeeCobrado('${clientId}');closeModal()">💰 Cobrar ahora todo el pendiente</button>` : ''}
+    <button class="btn2" onclick="closeModal()">Cancelar</button>`;
+  document.getElementById('modalBg').classList.add('on');
+}
+
+function saveClientFee(clientId){
+  const c = D.clients[clientId];
+  c.fee = parseFloat(document.getElementById('mfe-total').value) || 0;
+  c.feeCobrado = parseFloat(document.getElementById('mfe-cobrado').value) || 0;
+  c.feePendiente = parseFloat(document.getElementById('mfe-pendiente').value) || 0;
+  c.feeExpectedMonth = document.getElementById('mfe-expected').value;
+  c.feeCobradoMonth = document.getElementById('mfe-cobrado-mes').value;
+  save(); closeModal(); showNotif('Fee actualizado ✓');
+  renderCurrent();
+}
+
 // ═══════════════════════════════════════════════════════════════
 // RENDER: INICIO
 // ═══════════════════════════════════════════════════════════════
@@ -1103,14 +2025,14 @@ function renderInicio(){
       <div class="kcard"><div class="kl">Leads totales</div><div class="kv">${totalLeads}</div></div>
       <div class="kcard"><div class="kl">Tasa de cierre</div><div class="kv" style="color:${tasaGlobal>15?'var(--gn)':'var(--rd)'}">${tasaGlobal}%</div></div>
       <div class="kcard"><div class="kl">Fees cobrados</div><div class="kv" style="color:var(--gn)">USD ${feeCobrado.toLocaleString()}</div></div>
-      <div class="kcard"><div class="kl">Clientes activos</div><div class="kv" style="color:var(--gold)">${clients.length}</div></div>
+      <div class="kcard"><div class="kl">Clientes activos</div><div class="kv" style="color:var(--gold)">${clients.filter(c=>(c.status||'activo')==='activo').length}</div><div class="ks">${clients.length} totales</div></div>
     </div>
     ${canalHTML?'<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:6px">Conversión por canal</div>'+canalHTML+'</div>':''}`;
   
   // Funnel
-  const funnelHTML = LEAD_STAGES.slice(0,7).map(stage=>{
-    const count = stage==='Cerrado' ? leads.filter(l=>l.stage==='Cerrado').length + clients.length : leads.filter(l=>l.stage===stage).length;
-    const maxW = Math.max(...LEAD_STAGES.slice(0,7).map(s=>leads.filter(l=>l.stage===s).length),1);
+  const funnelHTML = LEAD_STAGES.slice(0,9).map(stage=>{
+    const count = leads.filter(l=>l.stage===stage).length;
+    const maxW = Math.max(...LEAD_STAGES.slice(0,9).map(s=>leads.filter(l=>l.stage===s).length),1);
     const pct = Math.max(Math.round(count/Math.max(totalLeads,1)*100),count?8:0);
     return `<div class="fbar"><div class="fbar-top"><span>${stage}</span><span>${count}</span></div><div class="fbar-track"><div class="fbar-fill" style="width:${pct}%;background:${STAGE_COLORS[stage]}">${count}</div></div></div>`;
   }).join('');
@@ -1143,17 +2065,23 @@ function findLeadId(l){
 // RENDER: PIPELINE
 // ═══════════════════════════════════════════════════════════════
 function renderPipeline(){
-  const tabs = ['Todos',...LEAD_STAGES];
+  // Excluir 'Perdido' del pipeline activo (se ve en Estadísticas)
+  const activeStages = LEAD_STAGES.filter(s => s !== 'Perdido');
+  const openLeads = Object.values(D.leads).filter(l => l.stage !== 'Perdido');
+  const tabs = ['Todos', ...activeStages];
   document.getElementById('pipeTabs').innerHTML = tabs.map(t=>{
-    const cnt = t==='Todos'?Object.keys(D.leads).length:Object.values(D.leads).filter(l=>l.stage===t).length;
+    const cnt = t==='Todos' ? openLeads.length : openLeads.filter(l=>l.stage===t).length;
     return `<button class="ftab${pipeFilter===t?' on':''}" onclick="pipeFilter='${t}';renderPipeline()">${t} (${cnt})</button>`;
   }).join('');
-  
-  let leads = Object.entries(D.leads).map(([id,l])=>({...l,_id:id}));
+
+  let leads = Object.entries(D.leads).map(([id,l])=>({...l,_id:id})).filter(l => l.stage !== 'Perdido');
   if(pipeFilter!=='Todos') leads = leads.filter(l=>l.stage===pipeFilter);
   leads.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-  
-  document.getElementById('pipeList').innerHTML = leads.length ? leads.map(l=>leadCard(l)).join('') : '<div class="empty"><div class="em">📭</div><p>Sin leads en esta etapa</p></div>';
+
+  const dedupeBtn = '<button class="btn-add" style="margin-bottom:8px" onclick="dedupeLeads()">🧹 Limpiar duplicados</button>';
+  const statsBtn = '<button class="btn-add" style="margin-bottom:8px;margin-left:6px" onclick="go(\'stats\')">📈 Estadísticas</button>';
+  const listHTML = leads.length ? leads.map(l=>leadCard(l)).join('') : '<div class="empty"><div class="em">📭</div><p>Sin leads en esta etapa</p></div>';
+  document.getElementById('pipeList').innerHTML = dedupeBtn + statsBtn + listHTML;
 }
 
 function showLeadDetail(id){
@@ -1177,6 +2105,8 @@ function showLeadDetail(id){
       <div class="cfrow"><span>Teléfono</span><span class="cfval">${l.phone||'—'}</span></div>
       <div class="cfrow"><span>Presupuesto</span><span class="cfval">${l.budget||'—'}</span></div>
       <div class="cfrow"><span>Viajeros</span><span class="cfval">${l.travelers||'—'}</span></div>
+      <div class="cfrow"><span>Fecha salida</span><span class="cfval">${l.fechaSalida?l.fechaSalida.split('-').reverse().join('/'):'—'}</span></div>
+      <div class="cfrow"><span>Fecha regreso</span><span class="cfval">${l.fechaRegreso?l.fechaRegreso.split('-').reverse().join('/'):'—'}</span></div>
       <div class="cfrow"><span>Creado</span><span class="cfval">${ago(l.createdAt)}</span></div>
       ${l.notes?'<div style="margin-top:10px;font-size:12px;color:var(--tx2);padding:8px;background:var(--s2);border-radius:6px">'+l.notes+'</div>':''}
     </div>
@@ -1194,13 +2124,16 @@ function renderClientes(){
     activo: allClients.filter(c=>(c.status||'activo')==='activo').length,
     viajando: allClients.filter(c=>c.status==='viajando').length,
     finalizado: allClients.filter(c=>c.status==='finalizado').length,
+    perdido: allClients.filter(c=>c.status==='perdido').length,
   };
   
   const tabs = [
     {id:'activo',name:'🟢 Activos ('+counts.activo+')'},
     {id:'viajando',name:'✈️ Viajando ('+counts.viajando+')'},
     {id:'finalizado',name:'✅ Finalizados ('+counts.finalizado+')'},
+    {id:'perdido',name:'❌ Perdidos ('+counts.perdido+')'},
   ];
+  const dedupeBtnClients = '<button class="btn-add" style="margin-bottom:8px" onclick="dedupeClients()">🧹 Limpiar duplicados</button>';
   
   let clients = allClients.filter(c=>(c.status||'activo')===clientFilter);
   
@@ -1214,7 +2147,7 @@ function renderClientes(){
     return pays.filter(p=>p.status==='Pendiente').reduce((a,p)=>a+p.amount,0);
   };
   
-  document.getElementById('clientesArea').innerHTML = 
+  document.getElementById('clientesArea').innerHTML = dedupeBtnClients + 
     '<div class="ftabs">'+tabs.map(t=>'<button class="ftab'+(clientFilter===t.id?' on':'')+'" onclick="clientFilter=\''+t.id+'\';renderClientes()">'+t.name+'</button>').join('')+'</div>' +
     (clients.length ? clients.map(c=>{
       const steps = c.steps ? Object.values(c.steps) : [];
@@ -1222,7 +2155,7 @@ function renderClientes(){
       const pct = steps.length ? Math.round(done/steps.length*100) : 0;
       const pendiente = getPendiente(c);
       const pendTag = pendiente > 0 ? '<span class="tag t-rd">⚠️ Debe $'+pendiente.toLocaleString()+'</span>' : '';
-      const statusIcon = c.status==='viajando'?'✈️':c.status==='finalizado'?'✅':'🟢';
+      const statusIcon = c.status==='viajando'?'✈️':c.status==='finalizado'?'✅':c.status==='perdido'?'❌':'🟢';
       return '<div class="lcard" onclick="showClientDetail(\''+c._id+'\')">'+
         '<div class="lcard-top"><div><div class="lcard-name">'+statusIcon+' '+c.name+'</div><div class="lcard-dest">'+(c.dest||'—')+' · '+(c.travelers||'?')+' pax</div></div><span class="tag t-gold">'+pct+'%</span></div>'+
         '<div class="pbar"><div class="pfill" style="width:'+pct+'%"></div></div>'+
@@ -1248,8 +2181,9 @@ function showClientDetail(id){
     const phaseSteps = steps.filter(([k,s])=>s.phase===phase.id);
     if(!phaseSteps.length) return;
     const pDone = phaseSteps.filter(([k,s])=>s.done).length;
-    phasesHTML += `<div class="phase-hdr" onclick="this.classList.toggle('open')">${phase.icon} ${phase.name} <span class="cnt">${pDone}/${phaseSteps.length}</span><span class="chv">▼</span></div>
-    <div class="phase-steps">${phaseSteps.map(([k,s])=>`<div class="step ${s.done?'done':''}" onclick="toggleClientStep('${id}','${k}')">
+    const isOpen = expandedPhases.has(id+'::'+phase.id);
+    phasesHTML += `<div class="phase-hdr${isOpen?' open':''}" onclick="togglePhase('${id}','${phase.id}')">${phase.icon} ${phase.name} <span class="cnt">${pDone}/${phaseSteps.length}</span><span class="chv">▼</span></div>
+    <div class="phase-steps">${phaseSteps.map(([k,s])=>`<div class="step ${s.done?'done':''}" onclick="event.stopPropagation();toggleClientStep('${id}','${k}')">
       <div class="step-chk">${s.done?'✓':''}</div>
       <div><div class="step-txt">${s.text}</div>${s.tag?'<span style="font-size:9px;padding:1px 6px;border-radius:4px;background:var(--gold2);color:var(--gold)">'+s.tag+'</span>':''}</div>
     </div>`).join('')}</div>`;
@@ -1273,6 +2207,7 @@ function showClientDetail(id){
           <option value="activo"${(c.status||'activo')==='activo'?' selected':''}>🟢 Activo (armando viaje)</option>
           <option value="viajando"${c.status==='viajando'?' selected':''}>✈️ Viajando</option>
           <option value="finalizado"${c.status==='finalizado'?' selected':''}>✅ Finalizado (ya viajó)</option>
+          <option value="perdido"${c.status==='perdido'?' selected':''}>❌ Perdido (no contrató)</option>
         </select>
       </div>
       <div class="pbar"><div class="pfill" style="width:${pct}%"></div></div>
@@ -1289,13 +2224,18 @@ function showClientDetail(id){
     <div class="shdr"><h3>Notas</h3></div>
     <div class="fg"><textarea style="min-height:80px" onchange="D.clients['${id}'].notes=this.value;save()" placeholder="Notas libres...">${c.notes||''}</textarea></div>
     
-    <div class="shdr"><h3>Datos financieros</h3></div>
+    <div class="shdr"><h3>Datos financieros</h3><button class="btn-add" onclick="editClientFee('${id}')">✎ Editar fee</button></div>
     <div class="lcard" style="cursor:default">
       <div class="cfrow"><span>Valor viaje</span><input type="number" style="width:100px;padding:4px 8px;background:var(--s2);border:1px solid var(--bdr);border-radius:4px;color:var(--tx);font-size:13px;text-align:right" value="${c.valorViaje||0}" onchange="D.clients['${id}'].valorViaje=parseFloat(this.value)||0;save()"></div>
-      <div class="cfrow"><span>Fee asesoría</span><input type="number" style="width:100px;padding:4px 8px;background:var(--s2);border:1px solid var(--bdr);border-radius:4px;color:var(--tx);font-size:13px;text-align:right" value="${c.fee||0}" onchange="D.clients['${id}'].fee=parseFloat(this.value)||0;save()"></div>
+      <div class="cfrow"><span>Fee total</span><span class="cfval">USD ${c.fee||0}</span></div>
+      <div class="cfrow"><span>Fee cobrado</span><span class="cfval pos">USD ${c.feeCobrado||0}${c.feeCobradoMonth?' ('+ymToLabel(c.feeCobradoMonth)+')':''}</span></div>
+      <div class="cfrow"><span>Fee pendiente</span><span class="cfval ${(c.feePendiente||0)>0?'neg':''}">USD ${c.feePendiente||0}${c.feeExpectedMonth&&(c.feePendiente||0)>0?' (esp. '+ymToLabel(c.feeExpectedMonth)+')':''}</span></div>
+      ${(c.feePendiente||0)>0?`<div style="padding:4px 0"><button class="btn1" style="width:100%;margin:4px 0" onclick="markFeeCobrado('${id}')">💰 Marcar fee pendiente como cobrado</button></div>`:''}
       <div class="cfrow"><span>Fecha viaje</span><input type="date" style="padding:4px 8px;background:var(--s2);border:1px solid var(--bdr);border-radius:4px;color:var(--tx);font-size:13px" value="${c.fechaViaje||''}" onchange="D.clients['${id}'].fechaViaje=this.value;save()"></div>
     </div>
     
+    <div class="shdr"><h3>Zona de peligro</h3></div>
+    <div style="margin:8px 0"><button class="btn-del" style="width:100%" onclick="deleteClient('${id}')">🗑 Eliminar cliente definitivamente</button><div style="font-size:10px;color:var(--tx3);text-align:center;margin-top:4px">Si no contrató, mejor marcalo como ❌ Perdido arriba (queda en histórico)</div></div>
     <div class="shdr"><h3>Comisiones por proveedor</h3><button class="btn-add" onclick="addClientCommission('${id}')">+ Comisión</button></div>
     ${(()=>{
       const comms = c.commissions ? Object.entries(c.commissions) : [];
@@ -1306,13 +2246,21 @@ function showClientDetail(id){
         const prov = PROVIDERS.find(p=>p.id===cm.provider)||{name:cm.provider};
         const statusIcon = cm.status==='cobrada'?'💰':'⏳';
         const statusColor = cm.status==='cobrada'?'var(--gn)':'var(--yw)';
-        return '<div class="cfrow" style="cursor:pointer" onclick="toggleCommStatus(\''+id+'\',\''+k+'\')"><span>'+(cm.name||'—')+'<br><span style="font-size:10px;color:var(--tx3)">'+prov.name+' · USD '+cm.bookingAmount+' → '+(cm.rateUsed||0)+'%'+(cm.archerCut?' (-'+cm.archerCut+'% Archer)':'')+'</span><br><span style="font-size:10px;color:'+statusColor+'">'+statusIcon+' '+(cm.status==='cobrada'?'Cobrada':'Pendiente post-viaje')+' (tocar para cambiar)</span></span><span class="cfval pos">USD '+cm.netAmount.toFixed(2)+'</span></div>';
+        const monthLabel = cm.expectedMonth ? ymToLabel(cm.expectedMonth) : 'sin fecha';
+        return '<div class="cfrow" style="cursor:pointer" onclick="editCommissionMonth(\''+id+'\',\''+k+'\')"><span>'+(cm.name||'—')+'<br><span style="font-size:10px;color:var(--tx3)">'+prov.name+' · USD '+cm.bookingAmount+' → '+(cm.rateUsed||0)+'%'+(cm.archerCut?' (-'+cm.archerCut+'% Archer)':'')+' · '+monthLabel+'</span><br><span style="font-size:10px;color:'+statusColor+'">'+statusIcon+' '+(cm.status==='cobrada'?'Cobrada':'Pendiente post-viaje')+'</span></span><div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span class="cfval pos">USD '+cm.netAmount.toFixed(2)+'</span>'+(cm.status!=='cobrada'?'<button onclick="event.stopPropagation();markCommissionCobrada(\''+id+'\',\''+k+'\')" style="background:var(--gn);color:#fff;border:none;padding:2px 8px;border-radius:4px;font-size:10px;cursor:pointer">💰 Cobrar</button>':'<button onclick="event.stopPropagation();markCommissionCobrada(\''+id+'\',\''+k+'\')" style="background:var(--tx3);color:#fff;border:none;padding:2px 8px;border-radius:4px;font-size:10px;cursor:pointer">↩ Pendiente</button>')+'</div></div>';
       }).join('');
       if(comms.length) html += '<div style="background:var(--s2);border-radius:8px;padding:10px;margin-top:6px"><div class="cfrow"><span>💰 Comisiones cobradas</span><span class="cfval pos">USD '+totalCobrada.toFixed(2)+'</span></div><div class="cfrow"><span>⏳ Pendientes post-viaje</span><span class="cfval" style="color:var(--yw)">USD '+totalPendiente.toFixed(2)+'</span></div><div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total comisiones</span><span class="cfval pos" style="font-size:16px">USD '+totalComm.toFixed(2)+'</span></div></div>';
       return html||'<div style="font-size:12px;color:var(--tx3);padding:8px">Sin comisiones cargadas</div>';
     })()}
     
     ${c.phone?'<a href="https://wa.me/'+c.phone.replace(/[^0-9]/g,'')+'" target="_blank"><button class="btn2" style="color:var(--gn)">💬 WhatsApp</button></a>':''}`;
+}
+
+function togglePhase(clientId, phaseId){
+  const key = clientId + '::' + phaseId;
+  if(expandedPhases.has(key)) expandedPhases.delete(key);
+  else expandedPhases.add(key);
+  showClientDetail(clientId);
 }
 
 function toggleClientStep(clientId, stepKey){
@@ -1346,6 +2294,10 @@ function addClientCommission(clientId){
     <div class="fg"><label>Monto de la reserva (USD)</label><input id="mc-booking" type="number" step="0.01" placeholder="500.00" oninput="calcCommPreview()"></div>
     <div id="mc-preview" style="padding:10px;background:var(--s2);border-radius:8px;margin-bottom:12px;font-size:13px;color:var(--tx2)">Seleccioná proveedor y monto</div>
     <div class="fg" id="mc-manual-wrap" style="display:none"><label>Monto comisión manual (USD)</label><input id="mc-manual-amount" type="number" step="0.01" placeholder="0.00"></div>
+    <div class="frow">
+      <div class="fg"><label>Estado inicial</label><select id="mc-status"><option value="pendiente">⏳ Pendiente post-viaje</option><option value="cobrada">💰 Ya cobrada</option></select></div>
+      <div class="fg"><label>Mes esperado de cobro</label><select id="mc-expected-month">${buildMonthOptions()}</select></div>
+    </div>
     <button class="btn1" onclick="saveClientCommission('${clientId}')">Guardar comisión</button>
     <button class="btn2" onclick="closeModal()">Cancelar</button>`;
   document.getElementById('modalBg').classList.add('on');
@@ -1402,8 +2354,10 @@ function saveClientCommission(clientId){
   if(!D.clients[clientId].commissions) D.clients[clientId].commissions={};
   const resName = document.getElementById('mc-name').value.trim()||'Sin nombre';
   const prov = PROVIDERS.find(p=>p.id===provId);
-  const commStatus = provId==='manual' ? 'pendiente' : (prov&&prov.timing==='upfront' ? 'cobrada' : 'pendiente');
-  D.clients[clientId].commissions[uid()] = {name:resName,provider:provId,bookingAmount:booking,netAmount,rateUsed,archerCut,status:commStatus,createdAt:Date.now()};
+  const selStatus = document.getElementById('mc-status') ? document.getElementById('mc-status').value : null;
+  const commStatus = selStatus || (provId==='manual' ? 'pendiente' : (prov&&prov.timing==='upfront' ? 'cobrada' : 'pendiente'));
+  const expectedMonth = (document.getElementById('mc-expected-month') ? document.getElementById('mc-expected-month').value : '') || currentYearMonth();
+  D.clients[clientId].commissions[uid()] = {name:resName,provider:provId,bookingAmount:booking,netAmount,rateUsed,archerCut,status:commStatus,expectedMonth,createdAt:Date.now()};
   save();closeModal();showClientDetail(clientId);
   showNotif('Comisión USD '+netAmount.toFixed(2)+' — '+resName+' ✓');
 }
@@ -1447,146 +2401,371 @@ function renderCash(){
   const payments = Object.entries(D.payments).map(([id,p])=>({...p,_id:id}));
   const clients = D.clients;
   const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-  
-  // All-time totals
-  const allFeesCobrados = payments.filter(p=>p.status==='Cobrado').reduce((a,p)=>a+p.amount,0);
-  const allFeesPendientes = payments.filter(p=>p.status==='Pendiente').reduce((a,p)=>a+p.amount,0);
-  let allCommCobradas=0,allCommPendientes=0;
-  Object.values(clients).forEach(c=>{
-    if(c.commissions) Object.values(c.commissions).forEach(cm=>{
-      if(cm.status==='cobrada') allCommCobradas+=cm.netAmount||0;
-      else allCommPendientes+=cm.netAmount||0;
-    });
-  });
-  
-  // Monthly breakdown
+  const year = new Date().getFullYear();
+  const ymArr = yearMonths(year);
+  const items = buildCashflowItems();
+
   function getMonthExpenses(m){
-    let total=0,items=[];
-    Object.entries(MONTHLY_EXPENSES.defaults).forEach(([k,v])=>{items.push({name:k,amount:v});total+=v;});
-    if(MONTHLY_EXPENSES.archer[m]!==undefined){items.push({name:'Archer Travel',amount:79});total+=79;}
-    if(MONTHLY_EXPENSES.oneTime[m]){
-      Object.entries(MONTHLY_EXPENSES.oneTime[m]).forEach(([k,v])=>{items.push({name:k,amount:v});total+=v;});
-    }
-    return {items,total};
-  }
-  
-  function getMonthIncome(m){
-    const monthPayments = payments.filter(p=>{
-      if(!p.date) return false;
-      const d=new Date(p.date);
-      return d.getMonth()===m && d.getFullYear()===2026;
+    let total=0,items2=[];
+    Object.entries(D.expenses||{}).forEach(([id,ex])=>{
+      let applies = false;
+      if(ex.recurring === 'monthly'){
+        const sm = (ex.startMonth!==undefined && ex.startMonth!==null) ? ex.startMonth : 0;
+        const em = (ex.endMonth!==undefined && ex.endMonth!==null) ? ex.endMonth : 11;
+        applies = (m >= sm && m <= em);
+      } else if(ex.month !== undefined && ex.month !== null && ex.month !== ''){
+        applies = (parseInt(ex.month) === m);
+      }
+      if(applies){
+        items2.push({name:ex.name,amount:ex.amount,category:ex.category||'otros',notes:ex.notes||'',_id:id,recurring:ex.recurring});
+        total+=ex.amount;
+      }
     });
-    const feesCobrados = monthPayments.filter(p=>p.status==='Cobrado').reduce((a,p)=>a+p.amount,0);
-    let commissions = 0;
-    Object.values(clients).forEach(c=>{
-      if(c.commissions) Object.values(c.commissions).forEach(cm=>{
-        const d = new Date(cm.createdAt);
-        if(d.getMonth()===m && cm.status==='cobrada') commissions+=cm.netAmount||0;
-      });
-    });
-    // Projected income
-    const projected = PROJECTED_INCOME[m]||[];
-    const projTotal = projected.reduce((a,p)=>a+p.monto,0);
-    return {feesCobrados,commissions,payments:monthPayments,projected,projTotal};
+    return {items:items2,total};
   }
-  
-  // Month tabs
-  const monthTabs = months.map((m,i)=>'<button class="ftab'+(cashMonth===i?' on':'')+'" onclick="cashMonth='+i+';renderCash()">'+m+'</button>').join('');
-  
-  // View tabs
-  const viewTabs = '<div class="ftabs"><button class="ftab'+(cashView==='mensual'?' on':'')+'" onclick="cashView=\'mensual\';renderCash()">📅 Mensual</button><button class="ftab'+(cashView==='resumen'?' on':'')+'" onclick="cashView=\'resumen\';renderCash()">📊 Resumen anual</button><button class="ftab'+(cashView==='donde'?' on':'')+'" onclick="cashView=\'donde\';renderCash()">📍 Dónde está la plata</button></div>';
-  
+
+  // Tabs
+  const viewTabs = `<div class="ftabs">
+    <button class="ftab${cashView==='matriz'?' on':''}" onclick="cashView='matriz';renderCash()">📊 Matriz</button>
+    <button class="ftab${cashView==='mensual'?' on':''}" onclick="cashView='mensual';renderCash()">📅 Mensual</button>
+    <button class="ftab${cashView==='resumen'?' on':''}" onclick="cashView='resumen';renderCash()">📈 Acumulado</button>
+    <button class="ftab${cashView==='donde'?' on':''}" onclick="cashView='donde';renderCash()">📍 Dónde está la plata</button>
+  </div>`;
+
   let content = '';
-  
-  if(cashView==='mensual'){
-    const exp = getMonthExpenses(cashMonth);
-    const inc = getMonthIncome(cashMonth);
-    const totalIngreso = inc.projTotal;
-    const cobrado = inc.projected.filter(p=>p.estado==='cobrado').reduce((a,p)=>a+p.monto,0);
-    const porCobrar = inc.projected.filter(p=>p.estado!=='cobrado').reduce((a,p)=>a+p.monto,0);
-    const neto = totalIngreso - exp.total;
-    
-    const estadoColor = {'cobrado':'var(--gn)','por cobrar':'var(--rd)','en tránsito':'var(--yw)','post-checkout':'var(--pp)'};
-    const estadoIcon = {'cobrado':'💰','por cobrar':'🔴','en tránsito':'⏳','post-checkout':'📦'};
-    
-    content = '<div class="ftabs" style="margin-top:8px">'+monthTabs+'</div>'+
-      '<div class="kgrid">'+
-        '<div class="kcard"><div class="kl">💰 Cobrado '+months[cashMonth]+'</div><div class="kv" style="color:var(--gn)">USD '+cobrado.toFixed(0)+'</div></div>'+
-        '<div class="kcard"><div class="kl">⏳ Por cobrar '+months[cashMonth]+'</div><div class="kv" style="color:var(--yw)">USD '+porCobrar.toFixed(0)+'</div></div>'+
-        '<div class="kcard"><div class="kl">📊 Ingreso total</div><div class="kv">USD '+totalIngreso.toFixed(0)+'</div></div>'+
-        '<div class="kcard"><div class="kl">💸 Gastos</div><div class="kv" style="color:var(--rd)">USD '+exp.total.toFixed(0)+'</div></div>'+
-      '</div>'+
-      '<div class="kcard w" style="margin-bottom:16px"><div class="kl">Resultado '+months[cashMonth]+'</div><div class="kv" style="color:'+(neto>=0?'var(--gn)':'var(--rd)')+'">USD '+neto.toFixed(0)+'</div></div>'+
-      '<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:6px">Ingresos proyectados</div>'+
-      (inc.projected.length?inc.projected.map(p=>{
-        const col=estadoColor[p.estado]||'var(--tx2)';
-        const ico=estadoIcon[p.estado]||'';
-        return '<div class="cfrow"><span>'+p.concepto+'<br><span style="font-size:10px;color:'+col+'">'+ico+' '+p.estado+'</span></span><span class="cfval" style="color:'+col+'">USD '+p.monto.toLocaleString()+'</span></div>';
-      }).join(''):'<div style="font-size:12px;color:var(--tx3);padding:8px">Sin ingresos proyectados este mes</div>')+
-      '</div>'+
-      '<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:6px">Gastos del mes</div>'+
-      exp.items.map(i=>'<div class="cfrow"><span>'+i.name+'</span><span class="cfval neg">-USD '+i.amount.toFixed(2)+'</span></div>').join('')+
-      '<div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total gastos</span><span class="cfval neg">-USD '+exp.total.toFixed(2)+'</span></div></div>';
-      
-  } else if(cashView==='resumen'){
-    // Annual P&L
-    let totalIngresos=0,totalGastos=0;
-    let monthlyData = months.map((m,i)=>{
-      const exp=getMonthExpenses(i);
-      const proj=PROJECTED_INCOME[i]||[];
-      const ingreso=proj.reduce((a,p)=>a+p.monto,0);
-      totalIngresos+=ingreso;
-      totalGastos+=exp.total;
-      const neto=ingreso-exp.total;
-      return '<div class="cfrow"><span><b>'+m+'</b></span><span style="font-size:11px;display:flex;gap:12px"><span style="color:var(--gn)">+'+ingreso.toFixed(0)+'</span><span style="color:var(--rd)">-'+exp.total.toFixed(0)+'</span><span style="color:'+(neto>=0?'var(--gn)':'var(--rd)')+';font-weight:600">'+neto.toFixed(0)+'</span></span></div>';
+
+  if(cashView==='matriz'){
+    const confirmed = items.filter(it => it.category==='Confirmados');
+    const probables = items.filter(it => it.category==='Probables');
+
+    function itemRow(it){
+      const cells = ymArr.map(ym=>{
+        const isMonth = it.month===ym;
+        const val = isMonth ? (it.amount||0) : 0;
+        const color = val>0 ? (it.status==='cobrada'?'var(--gn)':it.status==='proyectado'?'var(--pp)':'var(--yw)') : 'var(--tx3)';
+        return `<td style="padding:4px 6px;text-align:right;color:${color};font-size:11px">${val>0?val.toLocaleString():''}</td>`;
+      }).join('');
+      const total = it.amount||0;
+      const statusIcon = it.status==='cobrada'?'💰':it.status==='pendiente'?'⏳':it.status==='proyectado'?'🔮':'—';
+      let onclickAttr = '';
+      let actionBtn = '';
+      if(it.incomeItemId){
+        onclickAttr = `onclick="openIncomeItemModal('${it.incomeItemId}')"`;
+        const btnStyle = it.status==='cobrada' ? 'background:var(--tx3)' : 'background:var(--gn)';
+        const btnLabel = it.status==='cobrada' ? '↩' : '💰';
+        actionBtn = `<button onclick="event.stopPropagation();markIncomeItemCobrado('${it.incomeItemId}')" style="${btnStyle};color:#fff;border:none;padding:1px 6px;border-radius:3px;font-size:10px;cursor:pointer;margin-left:4px" title="${it.status==='cobrada'?'Volver a pendiente':'Marcar cobrado'}">${btnLabel}</button>`;
+      } else if(it.projectedId){
+        onclickAttr = `onclick="openProjectedModal('${it.projectedId}')"`;
+      } else if(it.clientId){
+        onclickAttr = `onclick="showClientDetail('${it.clientId}')"`;
+      }
+      return `<tr style="border-bottom:1px solid var(--bdr);cursor:${onclickAttr?'pointer':'default'}" ${onclickAttr}>
+        <td style="padding:4px 6px;font-size:11px;white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis">${statusIcon} ${it.name} ${actionBtn}</td>
+        ${cells}
+        <td style="padding:4px 6px;text-align:right;font-weight:600;font-size:11px;color:var(--gold)">${total.toLocaleString()}</td>
+      </tr>`;
+    }
+
+    function subtotalRow(label, list){
+      const cellsHTML = ymArr.map(ym=>{
+        const v = list.filter(it=>it.month===ym).reduce((a,it)=>a+(it.amount||0),0);
+        return `<td style="padding:4px 6px;text-align:right;font-weight:600;color:var(--tx2);font-size:11px">${v>0?v.toLocaleString():''}</td>`;
+      }).join('');
+      const total = list.reduce((a,it)=>a+(it.amount||0),0);
+      return `<tr style="background:var(--s2);border-top:2px solid var(--gold)">
+        <td style="padding:6px;font-weight:600;font-size:11px">${label}</td>
+        ${cellsHTML}
+        <td style="padding:6px;text-align:right;font-weight:600;color:var(--gold);font-size:11px">${total.toLocaleString()}</td>
+      </tr>`;
+    }
+
+    const headerCols = `<th style="padding:6px;text-align:left;font-size:10px;color:var(--tx3)">ITEM</th>` + months.map(m=>`<th style="padding:6px;text-align:right;font-size:10px;color:var(--tx3)">${m}</th>`).join('') + `<th style="padding:6px;text-align:right;font-size:10px;color:var(--tx3)">TOTAL</th>`;
+
+    const expenseMonthly = ymArr.map((ym,i) => getMonthExpenses(i).total);
+    const expenseCells = expenseMonthly.map(v => `<td style="padding:6px 8px;text-align:right;color:var(--rd);font-size:11px">-${v.toFixed(0)}</td>`).join('');
+    const totalExp = expenseMonthly.reduce((a,b)=>a+b,0);
+
+    const profitRow = ymArr.map((ym,i) => {
+      const inc = items.filter(it => it.month===ym).reduce((a,it)=>a+(it.amount||0),0);
+      const net = inc - expenseMonthly[i];
+      return `<td style="padding:6px;text-align:right;font-weight:700;font-size:11px;color:${net>=0?'var(--gn)':'var(--rd)'}">${net>=0?'+':''}${net.toFixed(0)}</td>`;
     }).join('');
-    
-    const ganancia = (allFeesCobrados+allFeesPendientes+allCommCobradas+allCommPendientes) - 3537;
-    
-    content = '<div class="kgrid">'+
-      '<div class="kcard"><div class="kl">Ingresos 2026 (USD)</div><div class="kv" style="color:var(--gn)">'+(allFeesCobrados+allFeesPendientes+allCommCobradas+allCommPendientes).toFixed(0)+'</div><div class="ks">Fees '+(allFeesCobrados+allFeesPendientes).toFixed(0)+' + Com '+(allCommCobradas+allCommPendientes).toFixed(0)+'</div></div>'+
-      '<div class="kcard"><div class="kl">Gastos 2026 (USD)</div><div class="kv" style="color:var(--rd)">3,537</div><div class="ks">Herramientas + Archer + Gonza</div></div>'+
-      '</div>'+
-      '<div class="kcard w" style="margin-bottom:16px"><div class="kl">Ganancia neta 2026 (USD)</div><div class="kv" style="color:var(--gn)">+'+ganancia.toFixed(0)+'</div></div>'+
-      '<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:6px">Mes a mes</div>'+monthlyData+
-      '<div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total (USD)</span><span style="font-size:11px;display:flex;gap:12px"><span style="color:var(--gn)">+'+totalIngresos.toFixed(0)+'</span><span style="color:var(--rd)">-'+totalGastos.toFixed(0)+'</span><span style="font-weight:600;color:var(--gn)">'+(totalIngresos-totalGastos).toFixed(0)+'</span></span></div></div>';
-      
-  } else if(cashView==='donde'){
-    content = '<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:8px">🇦🇷 Cuenta Argentina</div>'+
-      '<div class="cfrow"><span>Fees cobrados</span><span class="cfval pos">USD '+allFeesCobrados.toLocaleString()+'</span></div>'+
-      '<div class="cfrow"><span>Reembolsos clientes</span><span class="cfval">En cuenta</span></div>'+
-      '<div class="cfrow"><span>Deuda tarjeta crédito AR (Perillo)</span><span class="cfval neg">-$3,847</span></div>'+
-      '<div class="cfrow"><span>Cubierta con reembolso</span><span class="cfval pos">+$4,001</span></div>'+
-      '</div>'+
-      '<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">🇦🇺 Australia</div>'+
-      '<div class="cfrow"><span>Airwallex (STUBA Parrella)</span><span class="cfval pos">$29</span></div>'+
-      '<div class="cfrow"><span>Salió para clientes (ya pagado)</span><span class="cfval neg">-$6,570</span></div>'+
-      '<div class="cfrow"><span>Reembolsado en Argentina</span><span class="cfval">+$6,570 (en AR)</span></div>'+
-      '</div>'+
-      '<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">⏳ Archer Travel (pendiente)</div>'+
-      '<div class="cfrow"><span>Comisiones retenidas</span><span class="cfval" style="color:var(--yw)">~$1,795</span></div>'+
-      '<div class="cfrow"><span>Se libera</span><span class="cfval">Post-checkout (mayo+)</span></div>'+
-      '</div>'+
-      '<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">⚠️ Te deben</div>'+
-      '<div class="cfrow"><span>STUBA (hotel fallido Perillo)</span><span class="cfval" style="color:var(--rd)">$2,717</span></div>'+
-      '<div class="cfrow"><span>Stripe (Perillo, en tránsito)</span><span class="cfval" style="color:var(--yw)">~$2,554</span></div>'+
-      '<div class="cfrow"><span>Fees pendientes clientes</span><span class="cfval" style="color:var(--rd)">USD '+allFeesPendientes.toLocaleString()+'</span></div>'+
-      '<div class="cfrow"><span>Comisiones post-viaje</span><span class="cfval" style="color:var(--yw)">USD '+allCommPendientes.toFixed(0)+'</span></div>'+
-      '</div>';
+    const totalInc = items.reduce((a,it)=>a+(it.amount||0),0);
+    const totalProfit = totalInc - totalExp;
+
+    let acum = 0;
+    const acumRow = ymArr.map((ym,i) => {
+      const inc = items.filter(it => it.month===ym).reduce((a,it)=>a+(it.amount||0),0);
+      acum += inc - expenseMonthly[i];
+      return `<td style="padding:6px;text-align:right;font-size:11px;color:${acum>=0?'var(--gold)':'var(--rd)'}">${acum.toFixed(0)}</td>`;
+    }).join('');
+
+    const noMonthConf = confirmed.filter(it=>!it.month);
+    const noMonthProb = probables.filter(it=>!it.month);
+
+    content = `<div style="overflow-x:auto;margin-top:12px"><table style="width:100%;min-width:900px;border-collapse:collapse;background:var(--s1);border-radius:8px"><thead><tr>${headerCols}</tr></thead><tbody>`
+      + (confirmed.length ? `<tr><td colspan="14" style="padding:8px;font-weight:700;color:var(--gn);font-size:12px;background:var(--s2)">🟢 CLIENTES CONFIRMADOS</td></tr>` : '')
+      + confirmed.filter(it=>it.month).map(itemRow).join('')
+      + (noMonthConf.length ? `<tr><td colspan="14" style="padding:6px 8px;font-size:10px;color:var(--tx3);font-style:italic">Sin mes asignado (editar cliente para definir):</td></tr>` + noMonthConf.map(itemRow).join('') : '')
+      + (confirmed.length ? subtotalRow('SUBTOTAL CONFIRMADOS', confirmed) : '')
+      + (probables.length ? `<tr><td colspan="14" style="padding:8px;font-weight:700;color:var(--pp);font-size:12px;background:var(--s2)">🔮 PROBABLES (proyectados)</td></tr>` : '')
+      + probables.filter(it=>it.month).map(itemRow).join('')
+      + (noMonthProb.length ? noMonthProb.map(itemRow).join('') : '')
+      + (probables.length ? subtotalRow('SUBTOTAL PROBABLES', probables) : '')
+      + `<tr style="background:var(--s2);border-top:2px solid var(--gold)"><td style="padding:8px;font-weight:700;font-size:12px">💰 TOTAL INGRESOS</td>`
+      + ymArr.map(ym=>{const v=items.filter(it=>it.month===ym).reduce((a,it)=>a+(it.amount||0),0);return `<td style="padding:8px;text-align:right;font-weight:700;color:var(--gn);font-size:11px">${v.toFixed(0)}</td>`}).join('')
+      + `<td style="padding:8px;text-align:right;font-weight:700;color:var(--gn);font-size:11px">${totalInc.toFixed(0)}</td></tr>`
+      + `<tr><td style="padding:6px 8px;font-size:11px;color:var(--rd)">💸 GASTOS</td>${expenseCells}<td style="padding:6px 8px;text-align:right;color:var(--rd);font-size:11px">-${totalExp.toFixed(0)}</td></tr>`
+      + `<tr style="background:var(--s2);border-top:2px solid var(--gold)"><td style="padding:8px;font-weight:700;font-size:12px">📊 PROFIT MES</td>${profitRow}<td style="padding:8px;text-align:right;font-weight:700;font-size:11px;color:${totalProfit>=0?'var(--gn)':'var(--rd)'}">${totalProfit.toFixed(0)}</td></tr>`
+      + `<tr style="background:var(--s2)"><td style="padding:8px;font-weight:700;font-size:12px;color:var(--gold)">📈 ACUMULADO</td>${acumRow}<td style="padding:8px;text-align:right;font-weight:700;color:var(--gold);font-size:11px">${acum.toFixed(0)}</td></tr>`
+      + `</tbody></table></div>`
+      + `<div class="shdr"><h3>Ingresos y proyecciones</h3><div style="display:flex;gap:6px"><button class="btn-add" onclick="openIncomeItemModal()">+ Ingreso</button><button class="btn-add" onclick="openProjectedModal()">+ Proyección</button></div></div>`
+      + (Object.keys(D.projectedRevenue||{}).length
+        ? Object.entries(D.projectedRevenue).map(([pid,p])=>`<div class="cfrow" style="cursor:pointer" onclick="openProjectedModal('${pid}')"><span>${p.name}<br><span style="font-size:10px;color:var(--tx3)">${ymToLabel(p.month)} · ${p.type||'otro'}</span></span><span class="cfval" style="color:var(--pp)">USD ${(p.amount||0).toLocaleString()}</span></div>`).join('')
+        : `<div style="font-size:12px;color:var(--tx3);padding:12px">Sin proyecciones. Agregá leads del pipeline que probablemente cierren.</div>`);
   }
-  
-  document.getElementById('cashArea').innerHTML = viewTabs + content +
-    '<div class="shdr"><h3>Movimientos</h3><div style="display:flex;gap:6px"><button class="btn-add" onclick="exportCommissions()">📊 Exportar</button><button class="btn-add" onclick="openModal(\'addPayment\')">+ Pago</button></div></div>'+
-    (payments.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,10).map(p=>{
-      const cn=clients[p.clientId]?.name||'—';
-      const sc=p.status==='Cobrado'?'pos':'neg';
-      return '<div class="cfrow"><span>'+cn+'<br><span style="font-size:10px;color:var(--tx3)">'+p.concept+' · '+p.method+' · '+(p.date||'')+'</span></span><span class="cfval '+sc+'">USD '+p.amount.toLocaleString()+'</span></div>';
-    }).join('')||'<div style="font-size:12px;color:var(--tx3);padding:8px">Sin movimientos</div>');
+
+  else if(cashView==='mensual'){
+    const monthTabs = months.map((m,i)=>`<button class="ftab${cashMonth===i?' on':''}" onclick="cashMonth=${i};renderCash()">${m}</button>`).join('');
+    const mExpenses = getMonthExpenses(cashMonth);
+    const ym = ymArr[cashMonth];
+    const monthItems = items.filter(it => it.month===ym);
+    const cobrado = monthItems.filter(it=>it.status==='cobrada').reduce((a,it)=>a+(it.amount||0),0);
+    const porCobrar = monthItems.filter(it=>it.status==='pendiente').reduce((a,it)=>a+(it.amount||0),0);
+    const proyectado = monthItems.filter(it=>it.status==='proyectado').reduce((a,it)=>a+(it.amount||0),0);
+    const totalIngreso = cobrado + porCobrar + proyectado;
+    const neto = totalIngreso - mExpenses.total;
+
+    const chartData = ymArr.map((ym2,i)=>{
+      const inc = items.filter(it => it.month===ym2).reduce((a,it)=>a+(it.amount||0),0);
+      const exp = getMonthExpenses(i).total;
+      return {label:months[i], income:inc, expense:exp};
+    });
+    const chart = `<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">Ingresos vs Gastos (${year})</div>${svgBarChart(chartData,200)}<div style="display:flex;gap:16px;font-size:10px;color:var(--tx3);margin-top:4px"><span><span style="display:inline-block;width:10px;height:10px;background:#3ea66b;border-radius:2px"></span> Ingresos</span><span><span style="display:inline-block;width:10px;height:10px;background:#d45a5a;border-radius:2px"></span> Gastos</span></div></div>`;
+
+    content = `<div class="ftabs" style="margin-top:8px">${monthTabs}</div>`
+      + `<div class="kgrid">`
+      + `<div class="kcard"><div class="kl">💰 Cobrado ${months[cashMonth]}</div><div class="kv" style="color:var(--gn)">USD ${cobrado.toFixed(0)}</div></div>`
+      + `<div class="kcard"><div class="kl">⏳ Por cobrar ${months[cashMonth]}</div><div class="kv" style="color:var(--yw)">USD ${porCobrar.toFixed(0)}</div></div>`
+      + `<div class="kcard"><div class="kl">🔮 Proyectado ${months[cashMonth]}</div><div class="kv" style="color:var(--pp)">USD ${proyectado.toFixed(0)}</div></div>`
+      + `<div class="kcard"><div class="kl">💸 Gastos</div><div class="kv" style="color:var(--rd)">USD ${mExpenses.total.toFixed(0)}</div></div>`
+      + `</div>`
+      + `<div class="kcard w" style="margin-bottom:16px"><div class="kl">Resultado ${months[cashMonth]}</div><div class="kv" style="color:${neto>=0?'var(--gn)':'var(--rd)'}">USD ${neto.toFixed(0)}</div></div>`
+      + chart
+      + `<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:6px">Ingresos del mes</div>`
+      + (monthItems.length
+        ? monthItems.map(it=>{
+            const col = it.status==='cobrada'?'var(--gn)':it.status==='pendiente'?'var(--yw)':'var(--pp)';
+            const ic = it.status==='cobrada'?'💰':it.status==='pendiente'?'⏳':'🔮';
+            const onclickAttr = it.projectedId ? `onclick="openProjectedModal('${it.projectedId}')"` : (it.clientId ? `onclick="showClientDetail('${it.clientId}')"` : '');
+            return `<div class="cfrow" style="cursor:${onclickAttr?'pointer':'default'}" ${onclickAttr}><span>${it.name}<br><span style="font-size:10px;color:${col}">${ic} ${it.status}</span></span><span class="cfval" style="color:${col}">USD ${(it.amount||0).toLocaleString()}</span></div>`;
+          }).join('')
+        : `<div style="font-size:12px;color:var(--tx3);padding:8px">Sin ingresos este mes</div>`)
+      + `</div>`
+      + `<div class="lcard" style="cursor:default;margin-top:8px">`
+      + `<div class="lcard-name" style="margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><span>Gastos del mes</span><button class="btn-add" onclick="openModal('addExpense')">+ Gasto</button></div>`
+      + mExpenses.items.map(i=>{
+          const tag = i.recurring ? '🔄' : '✎';
+          const safe = JSON.stringify({_id:i._id,name:i.name,amount:i.amount,month:cashMonth,category:i.category,notes:i.notes}).replace(/'/g,'&#39;');
+          return `<div class="cfrow" style="cursor:pointer" onclick='openModal("editExpense",${safe})'><span>${i.name} <span style="font-size:10px;color:var(--tx3)">· ${tag}</span></span><span class="cfval neg">-USD ${i.amount.toFixed(2)}</span></div>`;
+        }).join('')
+      + `<div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total gastos</span><span class="cfval neg">-USD ${mExpenses.total.toFixed(2)}</span></div></div>`;
+  }
+
+  else if(cashView==='resumen'){
+    const monthlyData = ymArr.map((ym,i)=>{
+      const inc = items.filter(it => it.month===ym).reduce((a,it)=>a+(it.amount||0),0);
+      const exp = getMonthExpenses(i).total;
+      return {month:months[i], ingreso:inc, gasto:exp, neto:inc-exp};
+    });
+    const totalIngresos = monthlyData.reduce((a,m)=>a+m.ingreso,0);
+    const totalGastos = monthlyData.reduce((a,m)=>a+m.gasto,0);
+    const totalNet = totalIngresos - totalGastos;
+
+    let acum = 0;
+    const acumPoints = monthlyData.map(m=>{ acum += m.neto; return {label:m.month, value:acum}; });
+
+    content = `<div class="kgrid">`
+      + `<div class="kcard"><div class="kl">Ingresos ${year} (USD)</div><div class="kv" style="color:var(--gn)">${totalIngresos.toFixed(0)}</div></div>`
+      + `<div class="kcard"><div class="kl">Gastos ${year} (USD)</div><div class="kv" style="color:var(--rd)">${totalGastos.toFixed(0)}</div></div>`
+      + `</div>`
+      + `<div class="kcard w" style="margin-bottom:16px"><div class="kl">Ganancia neta ${year} (USD)</div><div class="kv" style="color:${totalNet>=0?'var(--gn)':'var(--rd)'}">${totalNet.toFixed(0)}</div></div>`
+      + `<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">📈 Surplus acumulado</div>${svgLineChart(acumPoints,200)}</div>`
+      + `<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:6px">Mes a mes</div>`
+      + monthlyData.map(m=>`<div class="cfrow"><span><b>${m.month}</b></span><span style="font-size:11px;display:flex;gap:12px"><span style="color:var(--gn)">+${m.ingreso.toFixed(0)}</span><span style="color:var(--rd)">-${m.gasto.toFixed(0)}</span><span style="color:${m.neto>=0?'var(--gn)':'var(--rd)'};font-weight:600">${m.neto>=0?'+':''}${m.neto.toFixed(0)}</span></span></div>`).join('')
+      + `<div class="cfrow" style="border-top:2px solid var(--gold)"><span style="font-weight:600">Total (USD)</span><span style="font-size:11px;display:flex;gap:12px"><span style="color:var(--gn)">+${totalIngresos.toFixed(0)}</span><span style="color:var(--rd)">-${totalGastos.toFixed(0)}</span><span style="font-weight:600;color:${totalNet>=0?'var(--gn)':'var(--rd)'}">${totalNet.toFixed(0)}</span></span></div></div>`;
+  }
+
+  else if(cashView==='donde'){
+    const allPending = items.filter(it=>it.status==='pendiente').reduce((a,it)=>a+(it.amount||0),0);
+    const allCobrado = items.filter(it=>it.status==='cobrada').reduce((a,it)=>a+(it.amount||0),0);
+    const allProyectado = items.filter(it=>it.status==='proyectado').reduce((a,it)=>a+(it.amount||0),0);
+
+    content = `<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:8px">💰 Cobrado (ya en la caja)</div><div class="cfrow"><span>Total cobrado ${year}</span><span class="cfval pos">USD ${allCobrado.toFixed(0)}</span></div></div>`
+      + `<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">⏳ Pendiente (confirmado pero no cobrado)</div><div class="cfrow"><span>Fees + comisiones pendientes</span><span class="cfval" style="color:var(--yw)">USD ${allPending.toFixed(0)}</span></div></div>`
+      + `<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">🔮 Proyectado (probables)</div><div class="cfrow"><span>Proyecciones de leads</span><span class="cfval" style="color:var(--pp)">USD ${allProyectado.toFixed(0)}</span></div></div>`;
+  }
+
+  document.getElementById('cashArea').innerHTML = viewTabs + content
+    + `<div class="shdr"><h3>Movimientos</h3><div style="display:flex;gap:6px"><button class="btn-add" onclick="exportCommissions()">📊 Exportar</button><button class="btn-add" onclick="openModal('addPayment')">+ Pago</button></div></div>`
+    + (payments.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,10).map(p=>{
+        const cn=clients[p.clientId]?.name||'—';
+        const sc=p.status==='Cobrado'?'pos':'neg';
+        return `<div class="cfrow"><span>${cn}<br><span style="font-size:10px;color:var(--tx3)">${p.concept} · ${p.method} · ${p.date||''}</span></span><span class="cfval ${sc}">USD ${p.amount.toLocaleString()}</span></div>`;
+      }).join('')||`<div style="font-size:12px;color:var(--tx3);padding:8px">Sin movimientos</div>`);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER: ESTADÍSTICAS (histórico de leads perdidos + clientes)
+// ═══════════════════════════════════════════════════════════════
+function renderStats(){
+  const allLeads = Object.values(D.leads);
+  const allClients = Object.values(D.clients);
+
+  // Totales
+  const totalLeads = allLeads.length;
+  const lost = allLeads.filter(l => l.stage === 'Perdido');
+  const closed = allLeads.filter(l => l.stage === 'Cerrado');
+  const inProgress = allLeads.filter(l => l.stage !== 'Perdido' && l.stage !== 'Cerrado');
+
+  // Clientes reales (cuenta como "cerrados" reales porque ya están convertidos)
+  const clientsActive = allClients.filter(c => (c.status||'activo')==='activo').length;
+  const clientsTraveling = allClients.filter(c => c.status==='viajando').length;
+  const clientsFinished = allClients.filter(c => c.status==='finalizado').length;
+  const clientsLost = allClients.filter(c => c.status==='perdido').length;
+
+  // Denominador total (incluye leads y clientes — cada cliente fue un lead cerrado)
+  const universeTotal = totalLeads + allClients.length;
+  const totalClosed = closed.length + allClients.length; // cerrados = leads cerrados + clientes
+  const totalLost = lost.length + clientsLost;
+  const closeRate = universeTotal ? Math.round((totalClosed / universeTotal) * 100) : 0;
+  const lossRate = universeTotal ? Math.round((totalLost / universeTotal) * 100) : 0;
+
+  // Por canal
+  const canalStats = {};
+  allLeads.forEach(l => {
+    const c = l.canal || 'Sin canal';
+    if(!canalStats[c]) canalStats[c] = {total:0, cerrado:0, perdido:0, abierto:0};
+    canalStats[c].total++;
+    if(l.stage === 'Cerrado') canalStats[c].cerrado++;
+    else if(l.stage === 'Perdido') canalStats[c].perdido++;
+    else canalStats[c].abierto++;
+  });
+  allClients.forEach(c => {
+    const canal = c.canal || 'Sin canal';
+    if(!canalStats[canal]) canalStats[canal] = {total:0, cerrado:0, perdido:0, abierto:0};
+    canalStats[canal].total++;
+    if(c.status === 'perdido') canalStats[canal].perdido++;
+    else canalStats[canal].cerrado++;
+  });
+
+  const canalHTML = Object.entries(canalStats).map(([c,s])=>{
+    const cr = s.total ? Math.round((s.cerrado/s.total)*100) : 0;
+    const lr = s.total ? Math.round((s.perdido/s.total)*100) : 0;
+    return `<div class="cfrow" style="cursor:default"><span><b>${c}</b><br><span style="font-size:10px;color:var(--tx3)">${s.total} totales · ${s.abierto} abiertos</span></span><span style="font-size:11px;display:flex;gap:10px"><span style="color:var(--gn)">✅ ${s.cerrado} (${cr}%)</span><span style="color:var(--rd)">❌ ${s.perdido} (${lr}%)</span></span></div>`;
+  }).join('');
+
+  // Lista de perdidos (leads)
+  const lostLeadsHTML = lost.length ? lost.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).map(l=>{
+    const leadId = Object.entries(D.leads).find(([id,ll])=>ll===l)?.[0];
+    return `<div class="cfrow" style="cursor:pointer" onclick="showLeadDetail('${leadId}')"><span>${l.name||'—'}<br><span style="font-size:10px;color:var(--tx3)">${l.dest||'—'} · ${l.canal||''} · ${ago(l.createdAt)}</span>${l.notes?'<br><span style="font-size:10px;color:var(--tx3);font-style:italic">"'+l.notes.slice(0,80)+(l.notes.length>80?'...':'')+'"</span>':''}</span><span class="cfval" style="color:var(--rd);font-size:11px">${l.canal||''}</span></div>`;
+  }).join('') : '<div style="font-size:12px;color:var(--tx3);padding:12px">Sin leads perdidos</div>';
+
+  // Lista clientes perdidos
+  const lostClientsHTML = clientsLost ? allClients.filter(c=>c.status==='perdido').map(c=>{
+    const cid = Object.entries(D.clients).find(([id,cc])=>cc===c)?.[0];
+    return `<div class="cfrow" style="cursor:pointer" onclick="showClientDetail('${cid}')"><span>${c.name||'—'}<br><span style="font-size:10px;color:var(--tx3)">${c.dest||'—'} · ${c.canal||''}</span></span><span class="cfval" style="color:var(--rd);font-size:11px">Cliente perdido</span></div>`;
+  }).join('') : '<div style="font-size:12px;color:var(--tx3);padding:12px">Sin clientes perdidos</div>';
+
+  // Lista clientes (cerrados = activos + viajando + finalizados)
+  const activeClientsHTML = (clientsActive+clientsTraveling+clientsFinished) ? allClients.filter(c=>c.status!=='perdido').sort((a,b)=>((a.status||'activo')==='finalizado'?1:0)-((b.status||'activo')==='finalizado'?1:0)).map(c=>{
+    const cid = Object.entries(D.clients).find(([id,cc])=>cc===c)?.[0];
+    const statusIcon = c.status==='viajando'?'✈️':c.status==='finalizado'?'✅':'🟢';
+    return `<div class="cfrow" style="cursor:pointer" onclick="showClientDetail('${cid}')"><span>${statusIcon} ${c.name||'—'}<br><span style="font-size:10px;color:var(--tx3)">${c.dest||'—'} · ${c.canal||''}</span></span><span class="cfval" style="color:var(--gn);font-size:11px">USD ${(c.fee||0).toLocaleString()}</span></div>`;
+  }).join('') : '<div style="font-size:12px;color:var(--tx3);padding:12px">Sin clientes</div>';
+
+  // Gráfico: funnel simplificado
+  const stageData = LEAD_STAGES.map(s => {
+    const cnt = allLeads.filter(l => l.stage === s).length + (s === 'Cerrado' ? allClients.filter(c=>c.status!=='perdido').length : 0) + (s === 'Perdido' ? clientsLost : 0);
+    return {stage: s, count: cnt};
+  });
+  const maxCnt = Math.max(1, ...stageData.map(s=>s.count));
+  const funnelHTML = stageData.map(s=>{
+    const pct = Math.round((s.count/maxCnt)*100);
+    const color = STAGE_COLORS[s.stage] || 'var(--tx3)';
+    return `<div class="fbar"><div class="fbar-top"><span>${s.stage}</span><span>${s.count}</span></div><div class="fbar-track"><div class="fbar-fill" style="width:${Math.max(pct,s.count?8:0)}%;background:${color}">${s.count}</div></div></div>`;
+  }).join('');
+
+  document.getElementById('v-stats').innerHTML = `
+    <button class="back" onclick="go('pipeline')">← Pipeline</button>
+    <h2 style="padding:8px 4px;margin:0">📈 Estadísticas</h2>
+
+    <div class="kgrid">
+      <div class="kcard"><div class="kl">Total leads</div><div class="kv">${totalLeads}</div></div>
+      <div class="kcard"><div class="kl">Clientes</div><div class="kv" style="color:var(--gn)">${allClients.length}</div></div>
+      <div class="kcard"><div class="kl">Tasa de cierre</div><div class="kv" style="color:${closeRate>=15?'var(--gn)':'var(--yw)'}">${closeRate}%</div><div class="ks">${totalClosed}/${universeTotal}</div></div>
+      <div class="kcard"><div class="kl">Tasa de pérdida</div><div class="kv" style="color:${lossRate<=50?'var(--gn)':'var(--rd)'}">${lossRate}%</div><div class="ks">${totalLost}/${universeTotal}</div></div>
+    </div>
+
+    <div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:6px">Clientes por estado</div>
+      <div class="cfrow"><span>🟢 Activos (armando)</span><span class="cfval" style="color:var(--gn)">${clientsActive}</span></div>
+      <div class="cfrow"><span>✈️ Viajando</span><span class="cfval" style="color:var(--gold)">${clientsTraveling}</span></div>
+      <div class="cfrow"><span>✅ Finalizados</span><span class="cfval" style="color:var(--gn)">${clientsFinished}</span></div>
+      <div class="cfrow"><span>❌ Perdidos</span><span class="cfval" style="color:var(--rd)">${clientsLost}</span></div>
+    </div>
+
+    <div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:6px">Funnel completo (leads + clientes)</div>
+      ${funnelHTML}
+    </div>
+
+    <div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:6px">Conversión por canal</div>
+      ${canalHTML || '<div style="font-size:12px;color:var(--tx3);padding:8px">Sin datos</div>'}
+    </div>
+
+    <div class="shdr"><h3>❌ Leads perdidos (${lost.length})</h3></div>
+    ${lostLeadsHTML}
+
+    ${clientsLost ? `<div class="shdr"><h3>❌ Clientes perdidos (${clientsLost})</h3></div>${lostClientsHTML}` : ''}
+
+    <div class="shdr"><h3>✅ Clientes (${allClients.filter(c=>c.status!=='perdido').length})</h3></div>
+    ${activeClientsHTML}
+  `;
 }
 
 // ═══════════════════════════════════════════════════════════════
 // RENDER: TAREAS
 // ═══════════════════════════════════════════════════════════════
+function renderTaskDeadline(id, deadline){
+  const valid = deadline && !isNaN(new Date(deadline).getTime());
+  if(valid){
+    return '<span class="tsk-deadline '+deadlineClass(deadline)+'" onclick="event.stopPropagation();openTaskDatePicker(\''+id+'\')">'+deadlineLabel(deadline)+'</span>';
+  }
+  return '<span class="tsk-deadline" style="cursor:pointer;background:var(--s2);color:var(--tx3)" onclick="event.stopPropagation();openTaskDatePicker(\''+id+'\')">📅 + fecha</span>';
+}
+
+function openTaskDatePicker(taskId){
+  const t = D.tasks[taskId];
+  if(!t) return;
+  const input = document.createElement('input');
+  input.type = 'date';
+  input.value = (t.deadline && !isNaN(new Date(t.deadline).getTime())) ? t.deadline : '';
+  input.style.cssText = 'position:fixed;top:-100px;left:-100px;opacity:0';
+  document.body.appendChild(input);
+  input.onchange = ()=>{
+    if(input.value){
+      D.tasks[taskId].deadline = input.value;
+    } else {
+      delete D.tasks[taskId].deadline;
+    }
+    save();
+    document.body.removeChild(input);
+    renderCurrent();
+  };
+  input.onblur = ()=>{ setTimeout(()=>{ if(input.parentNode) document.body.removeChild(input); }, 100); };
+  if(input.showPicker) input.showPicker(); else input.click();
+}
+
 function renderTareas(){
   const cats = [{id:'todos',name:'Todos'},...D.categories];
   document.getElementById('taskCatTabs').innerHTML = cats.map(c=>
@@ -1616,7 +2795,7 @@ function renderTareas(){
         <div class="tsk-title">${t.recurring?'🔄 ':''}${t.title}</div>
         <div class="tsk-meta">
           <span>${catName(t.cat)}</span>
-          ${t.deadline?'<span class="tsk-deadline '+deadlineClass(t.deadline)+'">'+deadlineLabel(t.deadline)+'</span>':''}
+          ${renderTaskDeadline(t._id, t.deadline)}
         </div>
       </div>
       <button style="background:none;border:none;color:var(--tx3);font-size:14px;padding:4px" onclick="event.stopPropagation();deleteTask('${t._id}')">🗑</button>
@@ -1751,3 +2930,4 @@ function updateAlertBadge(){
 </script>
 </body>
 </html>
+feat: CashFlow completo + gastos e ingresos editables + estadísticas + cliente eliminar
