@@ -238,6 +238,10 @@ button{font-family:var(--dm);cursor:pointer}input,select,textarea{font-family:va
 <div class="view" id="v-leadDetail"></div>
 <div class="view" id="v-clientDetail"></div>
 <div class="view" id="v-stats"></div>
+<div class="view" id="v-providers"></div>
+<div class="view" id="v-hoy"></div>
+<div class="view" id="v-inbox"></div>
+<div class="view" id="v-square"></div>
 </div>
 
 <nav class="bnav">
@@ -249,10 +253,14 @@ button{font-family:var(--dm);cursor:pointer}input,select,textarea{font-family:va
 </nav>
 
 <div class="more-menu" id="moreMenu">
+<button class="more-item" onclick="go('hoy');closeMore()">🌞 Hoy</button>
+<button class="more-item" onclick="go('inbox');closeMore()">📬 Inbox <span id="inboxBadge" style="color:var(--rd);font-size:11px;margin-left:4px"></span></button>
+<button class="more-item" onclick="go('square');closeMore()">💳 Square</button>
 <button class="more-item" onclick="go('tareas');closeMore()">📝 Tareas</button>
 <button class="more-item" onclick="go('plantillas');closeMore()">💬 Plantillas</button>
 <button class="more-item" onclick="go('contenido');closeMore()">📅 Contenido</button>
 <button class="more-item" onclick="go('stats');closeMore()">📈 Estadísticas</button>
+<button class="more-item" onclick="go('providers');closeMore()">🗂 Proveedores</button>
 <button class="more-item" onclick="go('alertas');closeMore()">🔔 Alertas <span id="alertBadgeMenu" style="color:var(--rd);font-size:11px;margin-left:4px"></span></button>
 </div>
 </div>
@@ -289,6 +297,19 @@ const NOTIFY_EMAILS = ["viajes@dosinquietos.com"];
 // ═══════════════════════════════════════════════════════════════
 const LEAD_STAGES = ['Lead','Formulario','Call agendada','Call realizada','Propuesta','Primer seguimiento','Segundo seguimiento','Ultimo seguimiento','Cerrado','Perdido'];
 const STAGE_COLORS = {Lead:'var(--bl)',Formulario:'var(--pp)','Call agendada':'var(--yw)','Call realizada':'var(--gold)',Propuesta:'var(--or)','Primer seguimiento':'var(--pp)','Segundo seguimiento':'var(--pp)','Ultimo seguimiento':'var(--pp)',Cerrado:'var(--gn)',Perdido:'var(--rd)'};
+
+const PROVIDER_SECTORS = [
+  {id:'hoteles',name:'🏨 Hoteles'},
+  {id:'actividades',name:'🎭 Actividades'},
+  {id:'vuelos',name:'✈️ Vuelos'},
+  {id:'trenes',name:'🚂 Trenes'},
+  {id:'transporte',name:'🚌 Transporte'},
+  {id:'seguros',name:'🛡 Seguros'},
+  {id:'cruceros',name:'⛴ Cruceros'},
+  {id:'cobros',name:'💳 Cobros'},
+  {id:'parques',name:'🎢 Parques temáticos'},
+  {id:'otro',name:'📦 Otro'},
+];
 
 const PROVIDERS = [
   {id:'ratehawk',name:'RateHawk',rate:6,type:'Hoteles',timing:'post'},
@@ -408,7 +429,7 @@ const DEFAULT_TEMPLATES = [
 // STATE
 // ═══════════════════════════════════════════════════════════════
 let db = null;
-let D = {leads:{},clients:{},tasks:{},templates:{},content:{},payments:{},expenses:{},categories:[...TASK_CATEGORIES],migrations:{},projectedRevenue:{},cashflowOverrides:{},incomeItems:{}};
+let D = {leads:{},clients:{},tasks:{},templates:{},content:{},payments:{},expenses:{},categories:[...TASK_CATEGORIES],migrations:{},projectedRevenue:{},cashflowOverrides:{},incomeItems:{},providers:{},inbox:{},squareInvoices:{},squarePayouts:{}};
 let currentView = 'inicio';
 let pipeFilter = 'Todos';
 let taskCatFilter = 'todos';
@@ -416,6 +437,8 @@ let taskPriFilter = 'todos';
 let contFilter = 'cal';
 let clientFilter = 'activo';
 let cashMonth = new Date().getMonth(); // 0=Jan current month
+let cashYear = new Date().getFullYear();
+let cashRolling = true; // default: matriz arranca en mes actual y avanza 12 meses
 let expandedPhases = new Set(); // fases expandidas en detalle del cliente
 let cashView = 'mensual'; // mensual or resumen
 
@@ -513,6 +536,10 @@ function initFirebase(){
       D.projectedRevenue = val.projectedRevenue||{};
       D.cashflowOverrides = val.cashflowOverrides||{};
       D.incomeItems = val.incomeItems||{};
+      D.providers = val.providers||{};
+      D.inbox = val.inbox||{};
+      D.squareInvoices = val.squareInvoices||{};
+      D.squarePayouts = val.squarePayouts||{};
       D.alertsDismissedAt = val.alertsDismissedAt||0;
     }
     // Cargar datos por defecto para lo que esté vacío
@@ -696,6 +723,80 @@ function loadDefaultLeads(){
 function runMigrations(){
   if(!D.migrations) D.migrations = {};
   let changed = false;
+
+  if(!D.migrations.providers_catalog_apr2026){
+    // Mapeo type→sector para los PROVIDERS hardcoded
+    const typeToSector = {
+      'Hoteles':'hoteles','Actividades':'actividades','Vuelos':'vuelos',
+      'Trenes':'trenes','Transporte':'transporte','Seguros':'seguros','Cruceros':'cruceros'
+    };
+    // Datos reales al 21 abril 2026 (del doc Proveedores_Dos_Inquietos_Abril2026.md)
+    const catalog = [
+      // Hoteles
+      {name:'RateHawk', sector:'hoteles', commission:'Precio neto + markup propio', status:'activo', paymentTiming:'post', notes:'No hay % fijo. Markup definido en cada cotización.'},
+      {name:'STUBA', sector:'hoteles', commission:'Precio neto + markup propio', status:'activo', paymentTiming:'upfront', notes:'Stripe links. Markup por cotización.'},
+      {name:'Hotelbeds / Bedsonline', sector:'hoteles', commission:'Por definir', status:'habilitado_sin_usar', paymentTiming:'upfront', notes:'Habilitado en abril 2026. Sin primera reserva aún.'},
+      {name:'Expedia TAAP', sector:'hoteles', commission:'10% (bruto) -20% Archer', status:'sin_respuesta', paymentTiming:'post', notes:'No contestan. Reintentar follow-up o plan B.'},
+      // Actividades
+      {name:'Viator', sector:'actividades', commission:'8%', status:'activo', paymentTiming:'post', notes:'Para experiencias complejas.'},
+      {name:'Civitatis', sector:'actividades', commission:'10%', status:'activo', paymentTiming:'post', notes:'Experiencias en español.'},
+      // Trenes
+      {name:'Rail Europe', sector:'trenes', commission:'B2B net pricing', status:'activo', paymentTiming:'post', notes:'Trenes en Europa.'},
+      // Parques
+      {name:'Disney (Travel Agents)', sector:'parques', commission:'A confirmar', status:'activo', paymentTiming:'post', notes:'Registro disneytravelagents.com.au completado. Sin TIDS requerido.'},
+      // Cruceros
+      {name:'CLIA Australasia', sector:'cruceros', commission:'—', status:'pendiente_tids', paymentTiming:'post', notes:'Evaluar membresía post aprobación TIDS. Contacto: info-aus@cruising.org.'},
+      // Vuelos
+      {name:'Duffel', sector:'vuelos', commission:'1% + USD 3/orden', status:'en_tramite', paymentTiming:'post', notes:'Vuelos sin IATA. Completar registro.'},
+      // Transporte
+      {name:'12Go Asia', sector:'transporte', commission:'0% (referral)', status:'activo', paymentTiming:'post', notes:''},
+      // Cobros
+      {name:'Square (AUD)', sector:'cobros', commission:'2.2% fee del proveedor', status:'activo', paymentTiming:'upfront', notes:'Reemplazo de Zeller para honorarios AUD. Desde abril 2026.'},
+      {name:'Airwallex', sector:'cobros', commission:'—', status:'activo', paymentTiming:'upfront', notes:'Tarjeta virtual para pagar a proveedores. Payment gateway re-aplicación pendiente.'},
+      {name:'Stripe', sector:'cobros', commission:'—', status:'activo', paymentTiming:'upfront', notes:'Cobros de clientes argentinos + STUBA.'},
+      {name:'Zeller', sector:'cobros', commission:'—', status:'cerrado', paymentTiming:'upfront', notes:'Cuenta cerrada por el proveedor. Reemplazado por Square.'},
+      // Exoticca
+      {name:'Exoticca', sector:'hoteles', commission:'—', status:'pendiente_tids', paymentTiming:'post', notes:'Esperando TIDS. Contacto: Dennis Basham (dennis.basham@exoticca.com). Registro en advisors.exoticca.com/au.'},
+      // Archer (salida)
+      {name:'Archer Travel', sector:'otro', commission:'20% host agency', status:'por_salir', paymentTiming:'post', notes:'Salida planificada julio 2026 post-María.'},
+      // Descartados
+      {name:'ETG', sector:'otro', commission:'—', status:'descartado', paymentTiming:'post', notes:'Descartado por ahora.'},
+    ];
+    // Merge con PROVIDERS hardcoded para no perder ninguno
+    if(typeof PROVIDERS !== 'undefined'){
+      PROVIDERS.forEach(p=>{
+        const existsInCatalog = catalog.some(c=>c.name.toLowerCase()===p.name.toLowerCase());
+        if(!existsInCatalog){
+          catalog.push({
+            name: p.name,
+            sector: typeToSector[p.type] || 'otro',
+            commission: (p.rate||0) + '%' + (p.flatFee?' + USD '+p.flatFee:''),
+            status:'activo',
+            paymentTiming: p.timing || 'post',
+            archerCut: p.archerCut || 0,
+            notes: 'Migrado del código hardcoded.',
+            legacyId: p.id
+          });
+        }
+      });
+    }
+    catalog.forEach((p,i)=>{
+      const pid = 'prov_' + p.name.toLowerCase().replace(/[^a-z0-9]/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'') + '_' + i;
+      D.providers[pid] = {
+        name: p.name, sector: p.sector, commission: p.commission,
+        status: p.status || 'activo',
+        paymentTiming: p.paymentTiming || 'post',
+        notes: p.notes || '',
+        contact: '', credentials: '',
+        archerCut: p.archerCut || 0,
+        legacyId: p.legacyId || '',
+        createdAt: Date.now()+i
+      };
+    });
+    D.migrations.providers_catalog_apr2026 = Date.now();
+    changed = true;
+    console.log('[migration] providers_catalog_apr2026 — ' + catalog.length + ' proveedores cargados en D.providers');
+  }
 
   if(!D.migrations.comisiones_legacy_apr2026){
     // Mapea mes en español a número
@@ -986,9 +1087,14 @@ function renderCurrent(){
     case 'plantillas': renderPlantillas(); break;
     case 'contenido': renderContenido(); break;
     case 'stats': renderStats(); break;
+    case 'providers': renderProviders(); break;
+    case 'hoy': renderHoy(); break;
+    case 'inbox': renderInbox(); break;
+    case 'square': renderSquare(); break;
     case 'alertas': renderAlertas(); break;
   }
   updateAlertBadge();
+  updateInboxBadge();
   checkAndNotify();
 }
 
@@ -1545,6 +1651,31 @@ function yearMonths(year){
   return out;
 }
 
+// Meses rolling: 12 meses empezando en el mes actual
+function rollingMonths(){
+  const now = new Date();
+  const out = [];
+  for(let i=0;i<12;i++){
+    const d = new Date(now.getFullYear(), now.getMonth()+i, 1);
+    out.push(d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'));
+  }
+  return out;
+}
+
+// Labels cortos (Ene/Feb/..) para una lista de YYYY-MM
+function ymLabelsShort(ymList){
+  const mNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const now = new Date();
+  const curYear = now.getFullYear();
+  return ymList.map(ym=>{
+    const [y,m] = ym.split('-');
+    const mi = parseInt(m)-1;
+    const yi = parseInt(y);
+    // Si el año es distinto al actual, mostrar "Ene'27"
+    return yi === curYear ? mNames[mi] : mNames[mi] + " '" + y.slice(2);
+  });
+}
+
 function svgBarChart(data, height){
   height = height || 200;
   const width = 800;
@@ -2021,6 +2152,7 @@ function renderInicio(){
   });
   
   document.getElementById('kpiArea').innerHTML = `
+    <button class="btn-add" style="width:100%;margin-bottom:12px;padding:12px;font-size:14px;background:var(--gold);color:var(--s0);font-weight:600" onclick="go('hoy')">🌞 Panel Hoy · qué hacer hoy</button>
     <div class="kgrid">
       <div class="kcard"><div class="kl">Leads totales</div><div class="kv">${totalLeads}</div></div>
       <div class="kcard"><div class="kl">Tasa de cierre</div><div class="kv" style="color:${tasaGlobal>15?'var(--gn)':'var(--rd)'}">${tasaGlobal}%</div></div>
@@ -2243,7 +2375,12 @@ function showClientDetail(id){
       const totalCobrada = comms.filter(([k,cm])=>cm.status==='cobrada').reduce((a,[k,cm])=>a+(cm.netAmount||0),0);
       const totalPendiente = comms.filter(([k,cm])=>cm.status!=='cobrada').reduce((a,[k,cm])=>a+(cm.netAmount||0),0);
       let html = comms.map(([k,cm])=>{
-        const prov = PROVIDERS.find(p=>p.id===cm.provider)||{name:cm.provider};
+        let prov = PROVIDERS.find(p=>p.id===cm.provider);
+        if(!prov && cm.provider && String(cm.provider).startsWith('dyn:')){
+          const dp = D.providers[String(cm.provider).substring(4)];
+          if(dp) prov = {name: dp.name, rate: 0};
+        }
+        if(!prov) prov = {name:cm.provider||'—'};
         const statusIcon = cm.status==='cobrada'?'💰':'⏳';
         const statusColor = cm.status==='cobrada'?'var(--gn)':'var(--yw)';
         const monthLabel = cm.expectedMonth ? ymToLabel(cm.expectedMonth) : 'sin fecha';
@@ -2286,7 +2423,22 @@ function toggleClientTask(clientId, taskId){
 }
 
 function addClientCommission(clientId){
-  const provOpts = PROVIDERS.map(p=>'<option value="'+p.id+'">'+p.name+' ('+p.type+')</option>').join('');
+  // Usar D.providers si está poblado; si no, fallback al PROVIDERS hardcoded
+  const dynamicProviders = Object.entries(D.providers||{}).map(([id,p])=>({...p,_id:id})).filter(p=>p.status==='activo'||p.status==='habilitado_sin_usar');
+  let provOpts;
+  if(dynamicProviders.length){
+    // Agrupar por sector
+    const bySec = {};
+    dynamicProviders.forEach(p=>{ if(!bySec[p.sector]) bySec[p.sector]=[]; bySec[p.sector].push(p); });
+    provOpts = PROVIDER_SECTORS.map(s=>{
+      const list = bySec[s.id] || [];
+      if(!list.length) return '';
+      const opts = list.map(p=>'<option value="dyn:'+p._id+'">'+p.name+'</option>').join('');
+      return '<optgroup label="'+s.name+'">'+opts+'</optgroup>';
+    }).join('');
+  } else {
+    provOpts = PROVIDERS.map(p=>'<option value="'+p.id+'">'+p.name+' ('+p.type+')</option>').join('');
+  }
   const m = document.getElementById('modalContent');
   m.innerHTML=`<h3>Agregar comisión</h3>
     <div class="fg"><label>Nombre de la reserva</label><input id="mc-name" placeholder="Ej: Hotel Roma, Tour Coliseo, Vuelo FCO-CDG"></div>
@@ -2340,10 +2492,31 @@ function saveClientCommission(clientId){
   const booking = parseFloat(document.getElementById('mc-booking').value)||0;
   if(!booking&&provId!=='manual'){showNotif('Ingresá el monto');return;}
   let netAmount,rateUsed,archerCut=0;
+  let effectiveProvId = provId;
   if(provId==='manual'){
     netAmount = parseFloat(document.getElementById('mc-manual-amount').value)||0;
     if(!netAmount){showNotif('Ingresá el monto');return;}
     rateUsed = 0;
+  } else if(provId.startsWith('dyn:')){
+    // Proveedor dinámico de D.providers: como no tiene rate numérico, pedir monto manual o usar booking
+    const pId = provId.substring(4);
+    const dp = D.providers[pId];
+    if(!dp){showNotif('Proveedor no encontrado');return;}
+    effectiveProvId = dp.legacyId || pId;
+    // Intentar parsear % de la comisión (si dice "8%" sacar 8)
+    const pctMatch = (dp.commission||'').match(/(\d+(?:\.\d+)?)\s*%/);
+    if(pctMatch){
+      const rate = parseFloat(pctMatch[1]);
+      netAmount = booking * (rate/100);
+      rateUsed = rate;
+    } else {
+      // Sin %, usar booking como monto manual
+      const manualAmt = parseFloat(document.getElementById('mc-manual-amount').value) || booking;
+      netAmount = manualAmt;
+      rateUsed = 0;
+    }
+    archerCut = dp.archerCut || 0;
+    if(archerCut > 0) netAmount = netAmount * (1 - archerCut/100);
   } else {
     const prov = PROVIDERS.find(p=>p.id===provId);
     let gross = prov.flatFee ? booking*(prov.rate/100)+prov.flatFee : booking*(prov.rate/100);
@@ -2375,7 +2548,12 @@ function exportCommissions(){
   Object.entries(D.clients).forEach(([cid,c])=>{
     if(c.commissions){
       Object.values(c.commissions).forEach(cm=>{
-        const prov = PROVIDERS.find(p=>p.id===cm.provider)||{name:cm.provider};
+        let prov = PROVIDERS.find(p=>p.id===cm.provider);
+        if(!prov && cm.provider && String(cm.provider).startsWith('dyn:')){
+          const dp = D.providers[String(cm.provider).substring(4)];
+          if(dp) prov = {name: dp.name, rate: 0};
+        }
+        if(!prov) prov = {name:cm.provider||'—'};
         csv += '"'+c.name+'","'+(cm.name||'—')+'","'+prov.name+'",'+cm.bookingAmount+','+cm.rateUsed+'%,'+cm.archerCut+'%,'+cm.netAmount.toFixed(2)+',"'+(cm.status==='cobrada'?'Cobrada':'Pendiente')+'",'+new Date(cm.createdAt).toISOString().slice(0,10)+'\\n';
       });
     }
@@ -2400,9 +2578,10 @@ function exportCommissions(){
 function renderCash(){
   const payments = Object.entries(D.payments).map(([id,p])=>({...p,_id:id}));
   const clients = D.clients;
-  const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-  const year = new Date().getFullYear();
-  const ymArr = yearMonths(year);
+  const defaultMonths = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const year = cashYear || new Date().getFullYear();
+  const ymArr = cashRolling ? rollingMonths() : yearMonths(year);
+  const months = ymLabelsShort(ymArr);
   const items = buildCashflowItems();
 
   function getMonthExpenses(m){
@@ -2429,7 +2608,7 @@ function renderCash(){
     <button class="ftab${cashView==='matriz'?' on':''}" onclick="cashView='matriz';renderCash()">📊 Matriz</button>
     <button class="ftab${cashView==='mensual'?' on':''}" onclick="cashView='mensual';renderCash()">📅 Mensual</button>
     <button class="ftab${cashView==='resumen'?' on':''}" onclick="cashView='resumen';renderCash()">📈 Acumulado</button>
-    <button class="ftab${cashView==='donde'?' on':''}" onclick="cashView='donde';renderCash()">📍 Dónde está la plata</button>
+    <button class="ftab${cashView==='donde'?' on':''}" onclick="cashView='donde';renderCash()">🔮 Proyección futura</button>
   </div>`;
 
   let content = '';
@@ -2437,6 +2616,12 @@ function renderCash(){
   if(cashView==='matriz'){
     const confirmed = items.filter(it => it.category==='Confirmados');
     const probables = items.filter(it => it.category==='Probables');
+    const currentYr = new Date().getFullYear();
+    const yearOpts = [currentYr-1, currentYr, currentYr+1, currentYr+2].map(y=>`<option value="${y}"${y===cashYear&&!cashRolling?' selected':''}>${y}</option>`).join('');
+    const yearControl = `<div style="display:flex;gap:12px;align-items:center;margin:8px 0;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:6px"><label style="font-size:12px;color:var(--tx2)">Año:</label><select ${cashRolling?'disabled':''} onchange="cashYear=parseInt(this.value);cashRolling=false;renderCash()" style="padding:4px 8px;background:var(--s2);border:1px solid var(--bdr);border-radius:4px;color:var(--tx);font-size:12px">${yearOpts}</select></div>
+      <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--tx2);cursor:pointer"><input type="checkbox" ${cashRolling?'checked':''} onchange="cashRolling=this.checked;renderCash()"> 📅 Próximos 12 meses</label>
+    </div>`;
 
     function itemRow(it){
       const cells = ymArr.map(ym=>{
@@ -2503,7 +2688,7 @@ function renderCash(){
     const noMonthConf = confirmed.filter(it=>!it.month);
     const noMonthProb = probables.filter(it=>!it.month);
 
-    content = `<div style="overflow-x:auto;margin-top:12px"><table style="width:100%;min-width:900px;border-collapse:collapse;background:var(--s1);border-radius:8px"><thead><tr>${headerCols}</tr></thead><tbody>`
+    content = yearControl + `<div style="overflow-x:auto;margin-top:4px"><table style="width:100%;min-width:900px;border-collapse:collapse;background:var(--s1);border-radius:8px"><thead><tr>${headerCols}</tr></thead><tbody>`
       + (confirmed.length ? `<tr><td colspan="14" style="padding:8px;font-weight:700;color:var(--gn);font-size:12px;background:var(--s2)">🟢 CLIENTES CONFIRMADOS</td></tr>` : '')
       + confirmed.filter(it=>it.month).map(itemRow).join('')
       + (noMonthConf.length ? `<tr><td colspan="14" style="padding:6px 8px;font-size:10px;color:var(--tx3);font-style:italic">Sin mes asignado (editar cliente para definir):</td></tr>` + noMonthConf.map(itemRow).join('') : '')
@@ -2526,9 +2711,13 @@ function renderCash(){
   }
 
   else if(cashView==='mensual'){
-    const monthTabs = months.map((m,i)=>`<button class="ftab${cashMonth===i?' on':''}" onclick="cashMonth=${i};renderCash()">${m}</button>`).join('');
+    const currentYrM = new Date().getFullYear();
+    const yearOptsM = [currentYrM-1, currentYrM, currentYrM+1, currentYrM+2].map(y=>`<option value="${y}"${y===cashYear?' selected':''}>${y}</option>`).join('');
+    const yearPicker = `<div style="margin:8px 0;display:flex;gap:8px;align-items:center"><label style="font-size:12px;color:var(--tx2)">Año:</label><select onchange="cashYear=parseInt(this.value);cashRolling=false;renderCash()" style="padding:4px 8px;background:var(--s2);border:1px solid var(--bdr);border-radius:4px;color:var(--tx);font-size:12px">${yearOptsM}</select></div>`;
+    const monthTabs = defaultMonths.map((m,i)=>`<button class="ftab${cashMonth===i?' on':''}" onclick="cashMonth=${i};renderCash()">${m}</button>`).join('');
     const mExpenses = getMonthExpenses(cashMonth);
-    const ym = ymArr[cashMonth];
+    // Mensual siempre usa cashYear (no rolling) para el mes específico
+    const ym = (cashYear || currentYrM) + '-' + String(cashMonth+1).padStart(2,'0');
     const monthItems = items.filter(it => it.month===ym);
     const cobrado = monthItems.filter(it=>it.status==='cobrada').reduce((a,it)=>a+(it.amount||0),0);
     const porCobrar = monthItems.filter(it=>it.status==='pendiente').reduce((a,it)=>a+(it.amount||0),0);
@@ -2541,9 +2730,10 @@ function renderCash(){
       const exp = getMonthExpenses(i).total;
       return {label:months[i], income:inc, expense:exp};
     });
-    const chart = `<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">Ingresos vs Gastos (${year})</div>${svgBarChart(chartData,200)}<div style="display:flex;gap:16px;font-size:10px;color:var(--tx3);margin-top:4px"><span><span style="display:inline-block;width:10px;height:10px;background:#3ea66b;border-radius:2px"></span> Ingresos</span><span><span style="display:inline-block;width:10px;height:10px;background:#d45a5a;border-radius:2px"></span> Gastos</span></div></div>`;
+    const chartLabel = cashRolling ? 'próximos 12 meses' : year;
+    const chart = `<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">Ingresos vs Gastos (${chartLabel})</div>${svgBarChart(chartData,200)}<div style="display:flex;gap:16px;font-size:10px;color:var(--tx3);margin-top:4px"><span><span style="display:inline-block;width:10px;height:10px;background:#3ea66b;border-radius:2px"></span> Ingresos</span><span><span style="display:inline-block;width:10px;height:10px;background:#d45a5a;border-radius:2px"></span> Gastos</span></div></div>`;
 
-    content = `<div class="ftabs" style="margin-top:8px">${monthTabs}</div>`
+    content = yearPicker + `<div class="ftabs" style="margin-top:8px">${monthTabs}</div>`
       + `<div class="kgrid">`
       + `<div class="kcard"><div class="kl">💰 Cobrado ${months[cashMonth]}</div><div class="kv" style="color:var(--gn)">USD ${cobrado.toFixed(0)}</div></div>`
       + `<div class="kcard"><div class="kl">⏳ Por cobrar ${months[cashMonth]}</div><div class="kv" style="color:var(--yw)">USD ${porCobrar.toFixed(0)}</div></div>`
@@ -2573,6 +2763,13 @@ function renderCash(){
   }
 
   else if(cashView==='resumen'){
+    const currentYrR = new Date().getFullYear();
+    const yearOptsR = [currentYrR-1, currentYrR, currentYrR+1, currentYrR+2].map(y=>`<option value="${y}"${y===cashYear&&!cashRolling?' selected':''}>${y}</option>`).join('');
+    const yearControlR = `<div style="display:flex;gap:12px;align-items:center;margin:8px 0;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:6px"><label style="font-size:12px;color:var(--tx2)">Año:</label><select ${cashRolling?'disabled':''} onchange="cashYear=parseInt(this.value);cashRolling=false;renderCash()" style="padding:4px 8px;background:var(--s2);border:1px solid var(--bdr);border-radius:4px;color:var(--tx);font-size:12px">${yearOptsR}</select></div>
+      <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--tx2);cursor:pointer"><input type="checkbox" ${cashRolling?'checked':''} onchange="cashRolling=this.checked;renderCash()"> 📅 Próximos 12 meses</label>
+    </div>`;
+    const periodLabel = cashRolling ? 'próximos 12m' : year;
     const monthlyData = ymArr.map((ym,i)=>{
       const inc = items.filter(it => it.month===ym).reduce((a,it)=>a+(it.amount||0),0);
       const exp = getMonthExpenses(i).total;
@@ -2585,11 +2782,11 @@ function renderCash(){
     let acum = 0;
     const acumPoints = monthlyData.map(m=>{ acum += m.neto; return {label:m.month, value:acum}; });
 
-    content = `<div class="kgrid">`
-      + `<div class="kcard"><div class="kl">Ingresos ${year} (USD)</div><div class="kv" style="color:var(--gn)">${totalIngresos.toFixed(0)}</div></div>`
-      + `<div class="kcard"><div class="kl">Gastos ${year} (USD)</div><div class="kv" style="color:var(--rd)">${totalGastos.toFixed(0)}</div></div>`
+    content = yearControlR + `<div class="kgrid">`
+      + `<div class="kcard"><div class="kl">Ingresos ${periodLabel} (USD)</div><div class="kv" style="color:var(--gn)">${totalIngresos.toFixed(0)}</div></div>`
+      + `<div class="kcard"><div class="kl">Gastos ${periodLabel} (USD)</div><div class="kv" style="color:var(--rd)">${totalGastos.toFixed(0)}</div></div>`
       + `</div>`
-      + `<div class="kcard w" style="margin-bottom:16px"><div class="kl">Ganancia neta ${year} (USD)</div><div class="kv" style="color:${totalNet>=0?'var(--gn)':'var(--rd)'}">${totalNet.toFixed(0)}</div></div>`
+      + `<div class="kcard w" style="margin-bottom:16px"><div class="kl">Ganancia neta ${periodLabel} (USD)</div><div class="kv" style="color:${totalNet>=0?'var(--gn)':'var(--rd)'}">${totalNet.toFixed(0)}</div></div>`
       + `<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">📈 Surplus acumulado</div>${svgLineChart(acumPoints,200)}</div>`
       + `<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:6px">Mes a mes</div>`
       + monthlyData.map(m=>`<div class="cfrow"><span><b>${m.month}</b></span><span style="font-size:11px;display:flex;gap:12px"><span style="color:var(--gn)">+${m.ingreso.toFixed(0)}</span><span style="color:var(--rd)">-${m.gasto.toFixed(0)}</span><span style="color:${m.neto>=0?'var(--gn)':'var(--rd)'};font-weight:600">${m.neto>=0?'+':''}${m.neto.toFixed(0)}</span></span></div>`).join('')
@@ -2731,6 +2928,647 @@ function renderStats(){
     <div class="shdr"><h3>✅ Clientes (${allClients.filter(c=>c.status!=='perdido').length})</h3></div>
     ${activeClientsHTML}
   `;
+}
+
+
+
+
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER: SQUARE (invoices + payments + payouts)
+// ═══════════════════════════════════════════════════════════════
+let squareFilter = 'active'; // active | all | paid | pending | payouts
+
+function renderSquare(){
+  const invoices = Object.entries(D.squareInvoices||{}).map(([id,i])=>({...i,_id:id}));
+  const payouts = Object.entries(D.squarePayouts||{}).map(([id,p])=>({...p,_id:id}));
+
+  invoices.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  payouts.sort((a,b)=>(b.sentAt||0)-(a.sentAt||0));
+
+  // KPIs
+  const pending = invoices.filter(i=>i.status==='published' || i.status==='draft').reduce((a,i)=>a+(i.totalAmount||0),0);
+  const paid30 = invoices.filter(i=>i.status==='paid' && i.paidAt && (Date.now()-i.paidAt)<30*86400000).reduce((a,i)=>a+(i.totalAmount||0),0);
+  const last30Payout = payouts.filter(p=>p.sentAt && (Date.now()-p.sentAt)<30*86400000).reduce((a,p)=>a+(p.amount||0),0);
+  const unlinkedCount = invoices.filter(i=>!i.clientId).length;
+
+  // Filtros
+  let filtered = invoices;
+  if(squareFilter === 'active') filtered = invoices.filter(i=>i.status!=='canceled');
+  else if(squareFilter === 'paid') filtered = invoices.filter(i=>i.status==='paid');
+  else if(squareFilter === 'pending') filtered = invoices.filter(i=>i.status==='published' || i.status==='draft');
+  else if(squareFilter === 'payouts') filtered = [];
+
+  const tabs = [
+    {id:'active',label:'Activas',count:invoices.filter(i=>i.status!=='canceled').length},
+    {id:'pending',label:'⏳ Por cobrar',count:invoices.filter(i=>i.status==='published' || i.status==='draft').length},
+    {id:'paid',label:'💰 Pagadas',count:invoices.filter(i=>i.status==='paid').length},
+    {id:'payouts',label:'🏦 Payouts',count:payouts.length},
+    {id:'all',label:'Todas',count:invoices.length}
+  ];
+  const tabsHTML = tabs.map(t=>`<button class="ftab${squareFilter===t.id?' on':''}" onclick="squareFilter='${t.id}';renderSquare()">${t.label} (${t.count})</button>`).join('');
+
+  const statusIcon = {'draft':'📝','published':'⏳','paid':'💰','canceled':'❌','partial':'🟡'};
+  const statusLabel = {'draft':'Borrador','published':'Enviada (por cobrar)','paid':'Pagada','canceled':'Cancelada','partial':'Pago parcial'};
+  const statusColor = {'draft':'var(--tx3)','published':'var(--yw)','paid':'var(--gn)','canceled':'var(--rd)','partial':'var(--or)'};
+
+  let listHTML = '';
+  if(squareFilter === 'payouts'){
+    listHTML = payouts.length ? payouts.map(p=>{
+      const when = p.sentAt ? new Date(p.sentAt).toLocaleDateString('es-AR') : '—';
+      return `<div class="cfrow" style="cursor:default">
+        <span>🏦 Payout ${when}<br><span style="font-size:10px;color:var(--tx3)">${p.destination||'cuenta bancaria'} · ${p.currency||'AUD'}</span></span>
+        <span class="cfval pos">${p.currency||'AUD'} ${(p.amount||0).toLocaleString()}</span>
+      </div>`;
+    }).join('') : '<div style="font-size:12px;color:var(--tx3);padding:12px">Sin payouts registrados</div>';
+  } else {
+    listHTML = filtered.length ? filtered.map(inv=>{
+      const client = inv.clientId ? D.clients[inv.clientId] : null;
+      const clientLabel = client ? client.name : (inv.clientName || '<span style="color:var(--yw)">⚠️ Sin vincular</span>');
+      const when = inv.createdAt ? ago(inv.createdAt) : '—';
+      const col = statusColor[inv.status] || 'var(--tx3)';
+      return `<div class="cfrow" style="cursor:pointer;align-items:flex-start" onclick="openSquareInvoiceModal('${inv._id}')">
+        <span>
+          ${statusIcon[inv.status]||'📄'} <b>${inv.title||inv.description||'Invoice ' + (inv.invoiceNumber||inv.squareId||'').slice(-6)}</b>
+          <br><span style="font-size:10px;color:var(--tx3)">${clientLabel} · ${when}</span>
+          <br><span style="font-size:10px;color:${col}">${statusLabel[inv.status]||inv.status}${inv.status==='paid'&&inv.paidAt?' · '+new Date(inv.paidAt).toLocaleDateString('es-AR'):''}</span>
+        </span>
+        <span class="cfval" style="color:${col}">${inv.currency||'AUD'} ${(inv.totalAmount||0).toLocaleString()}</span>
+      </div>`;
+    }).join('') : '<div class="empty" style="padding:24px"><div class="em">💳</div><p>Sin invoices en este filtro</p></div>';
+  }
+
+  let setupHint = '';
+  if(!invoices.length && !payouts.length){
+    setupHint = `<div class="lcard" style="cursor:default;background:var(--s2);border:1px dashed var(--gold)">
+      <div class="lcard-name" style="margin-bottom:6px;color:var(--gold)">⚙️ Setup Square</div>
+      <div style="font-size:12px;color:var(--tx2);line-height:1.5">
+        Esta vista se conecta a Square vía webhooks.<br><br>
+        <b>Pasos pendientes:</b><br>
+        1. Crear cuenta en developer.squareup.com<br>
+        2. Crear aplicación y sacar Access Token<br>
+        3. Deployar Apps Script endpoint (SETUP_SQUARE.md)<br>
+        4. Configurar webhook en Square Dashboard
+      </div>
+    </div>`;
+  }
+
+  document.getElementById('v-square').innerHTML = `
+    <div style="padding:4px 0 8px">
+      <h2 style="margin:0;font-size:20px">💳 Square</h2>
+      <div style="font-size:12px;color:var(--tx3)">Invoices y cobros automáticos desde Square</div>
+    </div>
+    <div class="kgrid">
+      <div class="kcard"><div class="kl">⏳ Por cobrar</div><div class="kv" style="color:var(--yw)">AUD ${pending.toFixed(0)}</div></div>
+      <div class="kcard"><div class="kl">💰 Cobrado (30d)</div><div class="kv" style="color:var(--gn)">AUD ${paid30.toFixed(0)}</div></div>
+      <div class="kcard"><div class="kl">🏦 Depositado (30d)</div><div class="kv" style="color:var(--gold)">AUD ${last30Payout.toFixed(0)}</div></div>
+      <div class="kcard"><div class="kl">⚠️ Sin vincular cliente</div><div class="kv" style="color:${unlinkedCount>0?'var(--rd)':'var(--tx3)'}">${unlinkedCount}</div></div>
+    </div>
+    <div class="ftabs" style="margin:8px 0">${tabsHTML}</div>
+    ${setupHint}
+    ${listHTML}
+  `;
+}
+
+function openSquareInvoiceModal(id){
+  const inv = D.squareInvoices[id];
+  if(!inv) return;
+  const client = inv.clientId ? D.clients[inv.clientId] : null;
+  const clientOpts = '<option value="">— sin vincular —</option>' + Object.entries(D.clients).map(([cid,c])=>`<option value="${cid}"${inv.clientId===cid?' selected':''}>${c.name}</option>`).join('');
+  const statusIcon = {'draft':'📝','published':'⏳','paid':'💰','canceled':'❌','partial':'🟡'};
+  const when = inv.createdAt ? new Date(inv.createdAt).toLocaleString('es-AR') : '—';
+  const whenPaid = inv.paidAt ? new Date(inv.paidAt).toLocaleString('es-AR') : null;
+
+  const m = document.getElementById('modalContent');
+  m.innerHTML = `<h3>${statusIcon[inv.status]||'📄'} ${inv.title||'Invoice'}</h3>
+    <div style="font-size:12px;color:var(--tx3);margin-bottom:12px">
+      <b>Square ID:</b> ${inv.squareId||'—'}<br>
+      <b>Número:</b> ${inv.invoiceNumber||'—'}<br>
+      <b>Estado:</b> ${inv.status||'—'}${whenPaid?' (pagada '+whenPaid+')':''}<br>
+      <b>Monto:</b> ${inv.currency||'AUD'} ${(inv.totalAmount||0).toLocaleString()}<br>
+      <b>Creada:</b> ${when}<br>
+      ${inv.customerEmail?'<b>Cliente email:</b> '+inv.customerEmail+'<br>':''}
+      ${inv.description?'<b>Descripción:</b> '+inv.description+'<br>':''}
+    </div>
+    <div class="fg"><label>Vincular con cliente del dashboard</label>
+      <select id="sqi-client">${clientOpts}</select>
+    </div>
+    ${inv.squareUrl?'<div style="margin:8px 0"><a href="'+inv.squareUrl+'" target="_blank" style="color:var(--gold);font-size:12px">🔗 Ver en Square Dashboard</a></div>':''}
+    <button class="btn1" onclick="linkSquareInvoice('${id}')">Guardar vínculo</button>
+    <button class="btn-del" onclick="deleteSquareInvoice('${id}')">🗑 Eliminar del dashboard</button>
+    <button class="btn2" onclick="closeModal()">Cerrar</button>`;
+  document.getElementById('modalBg').classList.add('on');
+}
+
+function linkSquareInvoice(id){
+  const inv = D.squareInvoices[id];
+  if(!inv) return;
+  const clientId = document.getElementById('sqi-client').value;
+  inv.clientId = clientId || null;
+  // Si la invoice ya está pagada y se vincula, crear movement automáticamente
+  if(clientId && inv.status==='paid' && !inv.autoPaymentId){
+    const payId = 'pay_' + uid();
+    D.payments[payId] = {
+      clientId,
+      concept: inv.title || 'Fee (Square)',
+      amount: inv.totalAmount || 0,
+      method: 'Square (AUD)',
+      status: 'Cobrado',
+      date: new Date(inv.paidAt || Date.now()).toISOString().slice(0,10),
+      createdAt: Date.now(),
+      autoFromSquareInvoice: id
+    };
+    inv.autoPaymentId = payId;
+    showNotif('💰 Movimiento auto-creado');
+  }
+  save(); closeModal(); showNotif('Invoice vinculada ✓');
+  renderCurrent();
+}
+
+function deleteSquareInvoice(id){
+  if(!confirm('¿Borrar esta invoice del dashboard? (No afecta Square)')) return;
+  const inv = D.squareInvoices[id];
+  if(inv && inv.autoPaymentId && D.payments[inv.autoPaymentId]){
+    delete D.payments[inv.autoPaymentId];
+  }
+  delete D.squareInvoices[id];
+  save(); closeModal(); showNotif('Eliminada');
+  renderCurrent();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER: INBOX (mails capturados desde Outlook via Power Automate)
+// ═══════════════════════════════════════════════════════════════
+let inboxFilter = 'unread'; // unread | all | comision | reserva | archer | cliente | archived
+
+function renderInbox(){
+  const all = Object.entries(D.inbox||{}).map(([id,m])=>({...m,_id:id}));
+  // Detectar categoría del mail si no viene seteada
+  all.forEach(m=>{
+    if(!m.category){
+      const s = ((m.from||'') + ' ' + (m.subject||'')).toLowerCase();
+      if(/expedia|civitatis|viator|ratehawk|stuba|archer|comision|commission|payout/.test(s)) m.category = 'comision';
+      else if(/booking|reserv|confirm/.test(s)) m.category = 'reserva';
+      else if(/archer/.test(s)) m.category = 'archer';
+      else m.category = 'otro';
+    }
+  });
+
+  let filtered = all;
+  if(inboxFilter === 'unread') filtered = all.filter(m=>!m.read && !m.archived);
+  else if(inboxFilter === 'archived') filtered = all.filter(m=>m.archived);
+  else if(inboxFilter !== 'all') filtered = all.filter(m=>m.category===inboxFilter && !m.archived);
+  filtered.sort((a,b)=>(b.receivedAt||0)-(a.receivedAt||0));
+
+  const unreadCount = all.filter(m=>!m.read && !m.archived).length;
+
+  const counts = {
+    unread: all.filter(m=>!m.read && !m.archived).length,
+    comision: all.filter(m=>m.category==='comision' && !m.archived).length,
+    reserva: all.filter(m=>m.category==='reserva' && !m.archived).length,
+    archer: all.filter(m=>m.category==='archer' && !m.archived).length,
+    cliente: all.filter(m=>m.category==='cliente' && !m.archived).length,
+    otro: all.filter(m=>m.category==='otro' && !m.archived).length,
+    archived: all.filter(m=>m.archived).length,
+    all: all.length
+  };
+
+  const tabs = [
+    {id:'unread',label:'🔴 No leídos',count:counts.unread},
+    {id:'comision',label:'💰 Comisiones',count:counts.comision},
+    {id:'reserva',label:'🏨 Reservas',count:counts.reserva},
+    {id:'archer',label:'🏢 Archer',count:counts.archer},
+    {id:'cliente',label:'👤 Clientes',count:counts.cliente},
+    {id:'otro',label:'📦 Otros',count:counts.otro},
+    {id:'archived',label:'🗄️ Archivados',count:counts.archived},
+    {id:'all',label:'Todos',count:counts.all}
+  ];
+  const tabsHTML = tabs.map(t=>`<button class="ftab${inboxFilter===t.id?' on':''}" onclick="inboxFilter='${t.id}';renderInbox()">${t.label} (${t.count})</button>`).join('');
+
+  const catIcon = {comision:'💰',reserva:'🏨',archer:'🏢',cliente:'👤',otro:'📦'};
+
+  const listHTML = filtered.length ? filtered.map(m=>{
+    const when = m.receivedAt ? ago(m.receivedAt) : '—';
+    const ic = catIcon[m.category] || '📨';
+    const dotColor = m.read ? 'transparent' : 'var(--gold)';
+    const preview = (m.bodyText||m.bodyPreview||'').slice(0,140).replace(/\s+/g,' ');
+    return `<div class="cfrow" style="cursor:pointer;align-items:flex-start" onclick="openInboxModal('${m._id}')">
+      <span>
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:6px"></span>
+        ${ic} <b>${m.subject||'(sin asunto)'}</b>
+        <br><span style="font-size:10px;color:var(--tx3)">${m.from||''} · ${when}</span>
+        ${preview?'<br><span style="font-size:10px;color:var(--tx2);font-style:italic">'+preview+'...</span>':''}
+      </span>
+      <span style="font-size:11px;color:var(--tx3);white-space:nowrap">→</span>
+    </div>`;
+  }).join('') : '<div class="empty" style="padding:24px"><div class="em">📭</div><p>Nada nuevo acá</p></div>';
+
+  // Setup info si está vacío
+  let setupHint = '';
+  if(!all.length){
+    setupHint = `<div class="lcard" style="cursor:default;background:var(--s2);border:1px dashed var(--gold)">
+      <div class="lcard-name" style="margin-bottom:6px;color:var(--gold)">⚙️ Setup Inbox</div>
+      <div style="font-size:12px;color:var(--tx2);line-height:1.5">
+        Esta vista recibe mails desde Outlook vía Power Automate.<br><br>
+        <b>Configuración pendiente:</b><br>
+        1. Deployar Apps Script web-app (endpoint)<br>
+        2. Crear flows en Power Automate que envíen mails al endpoint<br>
+        3. Cuando llegue un mail relevante aparecerá acá automáticamente
+      </div>
+    </div>`;
+  }
+
+  document.getElementById('v-inbox').innerHTML = `
+    <div style="padding:4px 0 8px">
+      <h2 style="margin:0;font-size:20px">📬 Inbox</h2>
+      <div style="font-size:12px;color:var(--tx3)">${unreadCount} no leído(s) · ${counts.all} total</div>
+    </div>
+    <div class="ftabs" style="margin-bottom:8px">${tabsHTML}</div>
+    ${setupHint}
+    ${listHTML}
+  `;
+
+  // Update badge
+  const badge = document.getElementById('inboxBadge');
+  if(badge){
+    badge.textContent = unreadCount > 0 ? '●' : '';
+  }
+}
+
+function openInboxModal(id){
+  const m = D.inbox[id];
+  if(!m) return;
+  // Marcar como leído al abrir
+  if(!m.read){ m.read = true; save(); }
+
+  const modal = document.getElementById('modalContent');
+  const when = m.receivedAt ? new Date(m.receivedAt).toLocaleString('es-AR') : '—';
+  const catIcon = {comision:'💰',reserva:'🏨',archer:'🏢',cliente:'👤',otro:'📦'};
+  const body = (m.bodyText || m.bodyPreview || m.body || '(sin contenido)').replace(/</g,'&lt;');
+
+  modal.innerHTML = `<h3>${catIcon[m.category]||'📨'} ${m.subject||'(sin asunto)'}</h3>
+    <div style="font-size:11px;color:var(--tx3);margin-bottom:12px">
+      <b>De:</b> ${m.from||'—'}<br>
+      <b>Fecha:</b> ${when}<br>
+      <b>Categoría:</b> ${m.category||'otro'}
+    </div>
+    <div style="background:var(--s2);padding:12px;border-radius:8px;max-height:300px;overflow-y:auto;font-size:12px;white-space:pre-wrap">${body}</div>
+    <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <button class="btn2" onclick="inboxActionCreateTask('${id}')">📝 Crear tarea</button>
+      <button class="btn2" onclick="inboxActionRegisterCommission('${id}')">💰 Registrar comisión</button>
+    </div>
+    <button class="btn2" style="margin-top:4px" onclick="inboxActionArchive('${id}')">🗄️ Archivar</button>
+    <button class="btn-del" style="margin-top:4px" onclick="inboxActionDelete('${id}')">🗑 Eliminar del Inbox</button>
+    <button class="btn2" style="margin-top:4px" onclick="closeModal()">Cerrar</button>`;
+  document.getElementById('modalBg').classList.add('on');
+}
+
+function inboxActionCreateTask(id){
+  const m = D.inbox[id];
+  if(!m) return;
+  const title = prompt('Título de la tarea:', '📧 ' + (m.subject||'Mail'));
+  if(!title) return;
+  const tid = 'task_' + uid();
+  D.tasks[tid] = {
+    title, cat:'operaciones', pri:'yw',
+    notes: 'Desde mail: ' + (m.from||'') + '\n\n' + (m.bodyPreview||'').slice(0,500),
+    done:false, createdAt:Date.now()
+  };
+  m.processedAs = 'task:' + tid;
+  save(); closeModal(); showNotif('Tarea creada ✓');
+  renderCurrent();
+}
+
+function inboxActionRegisterCommission(id){
+  const m = D.inbox[id];
+  if(!m) return;
+  // Intentar extraer monto del mail
+  const text = (m.subject||'') + ' ' + (m.bodyText||m.bodyPreview||'');
+  const amountMatch = text.match(/(?:USD?|\$)\s*(\d+(?:[.,]\d+)?)/i);
+  const suggestedAmount = amountMatch ? parseFloat(amountMatch[1].replace(',','.')) : 0;
+
+  const ym = currentYearMonth();
+  const iid = 'inc_' + uid();
+  const concept = 'Comisión — ' + (m.from||'proveedor') + ' (desde mail)';
+  D.incomeItems[iid] = {
+    name: concept, amount: suggestedAmount, month: ym,
+    type: 'commission', status: 'pendiente',
+    notes: 'Auto-creado desde mail. Revisar monto y cliente.\n\n' + text.slice(0,300),
+    createdAt: Date.now()
+  };
+  m.processedAs = 'income:' + iid;
+  save(); closeModal(); showNotif('Comisión creada en CashFlow — revisá monto');
+  go('cash');
+}
+
+function inboxActionArchive(id){
+  const m = D.inbox[id];
+  if(!m) return;
+  m.archived = true;
+  m.archivedAt = Date.now();
+  save(); closeModal(); showNotif('Archivado 🗄️');
+  renderCurrent();
+}
+
+function inboxActionDelete(id){
+  if(!confirm('¿Borrar este mail del inbox?')) return;
+  delete D.inbox[id];
+  save(); closeModal(); showNotif('Eliminado');
+  renderCurrent();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER: PANEL HOY (centro de acción diario)
+// ═══════════════════════════════════════════════════════════════
+function renderHoy(){
+  const now = new Date();
+  const today = now.toISOString().slice(0,10);
+  const currentYM = currentYearMonth();
+  const thisWeekEnd = new Date(now); thisWeekEnd.setDate(now.getDate() + 7);
+  const thisWeekStart = new Date(now);
+
+  // ── 1. COBROS VENCIDOS + ESTA SEMANA ─────────────────────
+  const allItems = buildCashflowItems();
+  const overdueOrDue = allItems.filter(it=>{
+    if(it.status === 'cobrada') return false;
+    if(!it.month) return false;
+    // Pasar 'YYYY-MM' a una fecha del primer día del mes
+    const [y,m] = it.month.split('-');
+    const itemDate = new Date(parseInt(y), parseInt(m)-1, 1);
+    // Si el mes ya pasó o es el mes actual, es "por cobrar"
+    return itemDate <= thisWeekEnd;
+  });
+  // Ordenar por mes (más viejos primero)
+  overdueOrDue.sort((a,b)=>(a.month||'').localeCompare(b.month||''));
+
+  const totalOverdue = overdueOrDue.filter(it=>{
+    const [y,m] = (it.month||'').split('-');
+    const itemDate = new Date(parseInt(y), parseInt(m)-1, 1);
+    return itemDate < new Date(now.getFullYear(), now.getMonth(), 1);
+  }).reduce((a,it)=>a+(it.amount||0),0);
+
+  const totalThisMonth = overdueOrDue.filter(it=>it.month === currentYM).reduce((a,it)=>a+(it.amount||0),0);
+
+  const cobrosHTML = overdueOrDue.length ? overdueOrDue.slice(0,15).map(it=>{
+    const [y,m] = (it.month||'').split('-');
+    const itemDate = new Date(parseInt(y), parseInt(m)-1, 1);
+    const isOverdue = itemDate < new Date(now.getFullYear(), now.getMonth(), 1);
+    const isThisMonth = it.month === currentYM;
+    const color = isOverdue ? 'var(--rd)' : isThisMonth ? 'var(--yw)' : 'var(--tx2)';
+    const icon = isOverdue ? '🔴' : isThisMonth ? '🟡' : '⏳';
+    const label = isOverdue ? 'Vencido' : isThisMonth ? 'Este mes' : 'Próximo';
+    const onclickAttr = it.clientId ? `onclick="showClientDetail('${it.clientId}')"` : (it.incomeItemId ? `onclick="openIncomeItemModal('${it.incomeItemId}')"` : (it.projectedId ? `onclick="openProjectedModal('${it.projectedId}')"` : ''));
+    return `<div class="cfrow" style="cursor:${onclickAttr?'pointer':'default'}" ${onclickAttr}>
+      <span>${icon} ${it.name}<br><span style="font-size:10px;color:${color}">${label} · ${ymToLabel(it.month)}</span></span>
+      <span class="cfval" style="color:${color}">USD ${(it.amount||0).toLocaleString()}</span>
+    </div>`;
+  }).join('') : '<div style="font-size:12px;color:var(--tx3);padding:12px">✅ Nada pendiente esta semana</div>';
+
+  // ── 2. LEADS SIN CONTACTAR >48h ─────────────────────────
+  const leads = Object.entries(D.leads||{}).map(([id,l])=>({...l,_id:id}));
+  const now_ts = Date.now();
+  const leadsNoContact = leads.filter(l=>{
+    if(l.stage !== 'Lead') return false; // Solo leads frescos
+    if(l.contactedAt) return false;
+    const hoursOld = (now_ts - (l.createdAt||now_ts))/3600000;
+    return hoursOld >= 48;
+  }).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+
+  const leadsHTML = leadsNoContact.length ? leadsNoContact.slice(0,10).map(l=>{
+    const hoursOld = (now_ts-(l.createdAt||now_ts))/3600000;
+    const daysOld = Math.floor(hoursOld/24);
+    const urgency = hoursOld >= 72 ? 'var(--rd)' : 'var(--yw)';
+    return `<div class="cfrow" style="cursor:pointer" onclick="showLeadDetail('${l._id}')">
+      <span>${l.name||'—'}<br><span style="font-size:10px;color:${urgency}">⚠️ ${daysOld}d sin contactar · ${l.canal||''} · ${l.dest||'—'}</span></span>
+      <span style="font-size:11px;color:var(--tx3)">→</span>
+    </div>`;
+  }).join('') : '<div style="font-size:12px;color:var(--tx3);padding:12px">✅ Todos contactados</div>';
+
+  // ── 3. CLIENTES VIAJANDO / POR VIAJAR ESTA SEMANA ───────
+  const clients = Object.entries(D.clients||{}).map(([id,c])=>({...c,_id:id}));
+  const clientsTravelWeek = clients.filter(c=>{
+    if(!c.fechaViaje) return false;
+    const dt = new Date(c.fechaViaje);
+    if(isNaN(dt.getTime())) return false;
+    const diffDays = (dt-now)/86400000;
+    return diffDays >= -7 && diffDays <= 14; // una semana antes/después + 2 semanas adelante
+  }).sort((a,b)=>new Date(a.fechaViaje)-new Date(b.fechaViaje));
+
+  const clientsHTML = clientsTravelWeek.length ? clientsTravelWeek.map(c=>{
+    const dt = new Date(c.fechaViaje);
+    const diffDays = Math.ceil((dt-now)/86400000);
+    const label = diffDays < 0 ? `viajando (día ${Math.abs(diffDays)})` : diffDays === 0 ? '🛫 Viaja HOY' : `en ${diffDays}d`;
+    const color = diffDays < 0 ? 'var(--gold)' : diffDays <= 3 ? 'var(--rd)' : 'var(--yw)';
+    return `<div class="cfrow" style="cursor:pointer" onclick="showClientDetail('${c._id}')">
+      <span>${c.name}<br><span style="font-size:10px;color:${color}">✈️ ${label} · ${c.dest||'—'}</span></span>
+      <span style="font-size:11px;color:var(--tx3)">→</span>
+    </div>`;
+  }).join('') : '<div style="font-size:12px;color:var(--tx3);padding:12px">Nadie viaja esta semana</div>';
+
+  // ── 4. TAREAS VENCIDAS / DE HOY ─────────────────────────
+  const tasks = Object.entries(D.tasks||{}).map(([id,t])=>({...t,_id:id})).filter(t=>!t.done);
+  const tasksUrgent = tasks.filter(t=>{
+    if(!t.deadline) return false;
+    return isOverdue(t.deadline) || isToday(t.deadline);
+  });
+  // Tareas de alta prioridad sin fecha
+  const tasksHighPri = tasks.filter(t=>t.pri === 'rd' && !t.deadline).slice(0,5);
+
+  const urgentTasks = [...tasksUrgent, ...tasksHighPri];
+  const tasksHTML = urgentTasks.length ? urgentTasks.slice(0,10).map(t=>{
+    const isOver = t.deadline && isOverdue(t.deadline);
+    const isHoy = t.deadline && isToday(t.deadline);
+    const icon = isOver ? '🔴' : isHoy ? '📌' : '🔥';
+    const color = isOver ? 'var(--rd)' : isHoy ? 'var(--yw)' : 'var(--or)';
+    const label = isOver ? 'Vencida' : isHoy ? 'Hoy' : 'Alta prioridad';
+    return `<div class="cfrow" style="cursor:pointer" onclick="toggleTask('${t._id}')">
+      <span>${icon} ${t.title}<br><span style="font-size:10px;color:${color}">${label}${t.deadline?' · '+fmtDate(t.deadline):''}</span></span>
+      <span style="font-size:11px;color:var(--tx3)">✓</span>
+    </div>`;
+  }).join('') : '<div style="font-size:12px;color:var(--tx3);padding:12px">✅ Sin tareas urgentes</div>';
+
+  // ── RENDER ─────────────────────────────────────────────
+  const dateLabel = now.toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'});
+
+  document.getElementById('v-hoy').innerHTML = `
+    <div style="padding:4px 0 12px">
+      <h2 style="margin:0;font-size:20px">🌞 Hoy</h2>
+      <div style="font-size:12px;color:var(--tx3);text-transform:capitalize">${dateLabel}</div>
+    </div>
+
+    <div class="kgrid">
+      <div class="kcard"><div class="kl">💸 Vencido (meses anteriores)</div><div class="kv" style="color:var(--rd)">USD ${totalOverdue.toFixed(0)}</div></div>
+      <div class="kcard"><div class="kl">🗓 Por cobrar este mes</div><div class="kv" style="color:var(--yw)">USD ${totalThisMonth.toFixed(0)}</div></div>
+      <div class="kcard"><div class="kl">⚠️ Leads sin contactar</div><div class="kv" style="color:${leadsNoContact.length>0?'var(--rd)':'var(--gn)'}">${leadsNoContact.length}</div></div>
+      <div class="kcard"><div class="kl">✈️ Viajan esta semana</div><div class="kv" style="color:var(--gold)">${clientsTravelWeek.filter(c=>{const dt=new Date(c.fechaViaje);const d=(dt-now)/86400000;return d>=-7&&d<=7}).length}</div></div>
+    </div>
+
+    <div class="lcard" style="cursor:default;margin-top:8px">
+      <div class="lcard-name" style="margin-bottom:6px">💸 Cobros pendientes (vencidos + próximas semanas)</div>
+      ${cobrosHTML}
+    </div>
+
+    <div class="lcard" style="cursor:default;margin-top:8px">
+      <div class="lcard-name" style="margin-bottom:6px">⚠️ Leads sin contactar (>48h)</div>
+      ${leadsHTML}
+    </div>
+
+    <div class="lcard" style="cursor:default;margin-top:8px">
+      <div class="lcard-name" style="margin-bottom:6px">✈️ Clientes viajando / por viajar</div>
+      ${clientsHTML}
+    </div>
+
+    <div class="lcard" style="cursor:default;margin-top:8px">
+      <div class="lcard-name" style="margin-bottom:6px">🔥 Tareas urgentes</div>
+      ${tasksHTML}
+    </div>
+
+    <div style="text-align:center;margin-top:16px;padding:12px">
+      <a onclick="go('inicio')" style="color:var(--gold);font-size:12px;cursor:pointer">Ir al Inicio completo →</a>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER: PROVEEDORES (editable por sector)
+// ═══════════════════════════════════════════════════════════════
+function renderProviders(){
+  const allProviders = Object.entries(D.providers||{}).map(([id,p])=>({...p,_id:id}));
+  // Agrupar por sector
+  const bySector = {};
+  PROVIDER_SECTORS.forEach(s=>{ bySector[s.id] = []; });
+  allProviders.forEach(p=>{
+    const sid = p.sector || 'otro';
+    if(!bySector[sid]) bySector[sid] = [];
+    bySector[sid].push(p);
+  });
+
+  const statusColors = {
+    'activo':'var(--gn)',
+    'habilitado_sin_usar':'var(--gold)',
+    'en_tramite':'var(--yw)',
+    'pendiente_tids':'var(--pp)',
+    'sin_respuesta':'var(--rd)',
+    'por_salir':'var(--or)',
+    'cerrado':'var(--rd)',
+    'descartado':'var(--tx3)'
+  };
+  const statusLabels = {
+    'activo':'🟢 Activo',
+    'habilitado_sin_usar':'🟡 Habilitado (sin estrenar)',
+    'en_tramite':'⏳ En trámite',
+    'pendiente_tids':'⏸️ Esperando TIDS',
+    'sin_respuesta':'❓ Sin respuesta',
+    'por_salir':'🔶 Por salir',
+    'cerrado':'❌ Cerrado',
+    'descartado':'🚫 Descartado'
+  };
+
+  // Resumen arriba
+  const totalActive = allProviders.filter(p=>p.status==='activo').length;
+  const totalPending = allProviders.filter(p=>['en_tramite','pendiente_tids','sin_respuesta','habilitado_sin_usar'].includes(p.status)).length;
+  const totalOut = allProviders.filter(p=>['cerrado','descartado','por_salir'].includes(p.status)).length;
+
+  let html = `
+    <button class="back" onclick="go('inicio')">← Inicio</button>
+    <h2 style="padding:8px 4px;margin:0">🗂 Proveedores</h2>
+    <div class="kgrid">
+      <div class="kcard"><div class="kl">Activos</div><div class="kv" style="color:var(--gn)">${totalActive}</div></div>
+      <div class="kcard"><div class="kl">Pendientes</div><div class="kv" style="color:var(--yw)">${totalPending}</div></div>
+      <div class="kcard"><div class="kl">De salida / descartados</div><div class="kv" style="color:var(--rd)">${totalOut}</div></div>
+    </div>
+    <div style="margin:8px 0"><button class="btn-add" onclick="openProviderModal()">+ Proveedor</button></div>
+  `;
+
+  PROVIDER_SECTORS.forEach(sector=>{
+    const provs = bySector[sector.id] || [];
+    if(provs.length === 0) return;
+    html += `<div class="shdr"><h3>${sector.name} (${provs.length})</h3></div>`;
+    provs.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+    provs.forEach(p=>{
+      const statusColor = statusColors[p.status] || 'var(--tx3)';
+      const statusLabel = statusLabels[p.status] || p.status;
+      const paymentLabel = p.paymentTiming === 'upfront' ? '💰 Upfront' : '⏳ Post-viaje';
+      html += `<div class="cfrow" style="cursor:pointer" onclick="openProviderModal('${p._id}')">
+        <span>
+          <b>${p.name}</b><br>
+          <span style="font-size:10px;color:${statusColor}">${statusLabel}</span>
+          <span style="font-size:10px;color:var(--tx3)"> · ${paymentLabel}</span>
+          ${p.commission?'<br><span style="font-size:10px;color:var(--tx2)">💼 '+p.commission+'</span>':''}
+          ${p.notes?'<br><span style="font-size:10px;color:var(--tx3);font-style:italic">"'+p.notes.slice(0,120)+(p.notes.length>120?'...':'')+'"</span>':''}
+        </span>
+        <span style="font-size:11px;color:var(--tx3)">✎</span>
+      </div>`;
+    });
+  });
+
+  document.getElementById('v-providers').innerHTML = html;
+}
+
+function openProviderModal(id){
+  const p = id ? D.providers[id] : null;
+  const m = document.getElementById('modalContent');
+  const sectorOpts = PROVIDER_SECTORS.map(s=>`<option value="${s.id}"${p&&p.sector===s.id?' selected':''}>${s.name}</option>`).join('');
+  const statuses = [
+    {id:'activo',label:'🟢 Activo'},
+    {id:'habilitado_sin_usar',label:'🟡 Habilitado (sin estrenar)'},
+    {id:'en_tramite',label:'⏳ En trámite'},
+    {id:'pendiente_tids',label:'⏸️ Esperando TIDS'},
+    {id:'sin_respuesta',label:'❓ Sin respuesta'},
+    {id:'por_salir',label:'🔶 Por salir'},
+    {id:'cerrado',label:'❌ Cerrado'},
+    {id:'descartado',label:'🚫 Descartado'}
+  ];
+  const statusOpts = statuses.map(s=>`<option value="${s.id}"${p&&p.status===s.id?' selected':''}>${s.label}</option>`).join('');
+  const timingOpts = ['post','upfront'].map(t=>`<option value="${t}"${p&&p.paymentTiming===t?' selected':''}>${t==='post'?'⏳ Post-viaje':'💰 Upfront'}</option>`).join('');
+  m.innerHTML = `<h3>${p?'Editar':'Nuevo'} proveedor</h3>
+    <div class="fg"><label>Nombre</label><input id="mpv-name" value="${p?(p.name||'').replace(/"/g,'&quot;'):''}" placeholder="Ej: Hotelbeds"></div>
+    <div class="frow">
+      <div class="fg"><label>Sector</label><select id="mpv-sector">${sectorOpts}</select></div>
+      <div class="fg"><label>Estado</label><select id="mpv-status">${statusOpts}</select></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>Comisión / condiciones</label><input id="mpv-commission" value="${p?(p.commission||'').replace(/"/g,'&quot;'):''}" placeholder="Ej: 8% post-viaje o 'neto+markup'"></div>
+      <div class="fg"><label>Timing de pago</label><select id="mpv-timing">${timingOpts}</select></div>
+    </div>
+    <div class="fg"><label>Contacto</label><input id="mpv-contact" value="${p?(p.contact||'').replace(/"/g,'&quot;'):''}" placeholder="Email, teléfono, persona de contacto"></div>
+    <div class="fg"><label>Credenciales / login</label><input id="mpv-credentials" value="${p?(p.credentials||'').replace(/"/g,'&quot;'):''}" placeholder="URL portal, ID de agencia, etc."></div>
+    <div class="fg"><label>Notas</label><textarea id="mpv-notes">${p?(p.notes||''):''}</textarea></div>
+    <button class="btn1" onclick="saveProvider('${id||''}')">Guardar</button>
+    ${id?`<button class="btn-del" onclick="deleteProvider('${id}')">Eliminar</button>`:''}
+    <button class="btn2" onclick="closeModal()">Cancelar</button>`;
+  document.getElementById('modalBg').classList.add('on');
+}
+
+function saveProvider(id){
+  const name = document.getElementById('mpv-name').value.trim();
+  if(!name){showNotif('Ingresá el nombre');return}
+  const pid = id || ('prov_' + name.toLowerCase().replace(/[^a-z0-9]/g,'_').replace(/_+/g,'_') + '_' + uid());
+  const existing = D.providers[pid] || {};
+  D.providers[pid] = {
+    ...existing,
+    name,
+    sector: document.getElementById('mpv-sector').value,
+    status: document.getElementById('mpv-status').value,
+    commission: document.getElementById('mpv-commission').value,
+    paymentTiming: document.getElementById('mpv-timing').value,
+    contact: document.getElementById('mpv-contact').value,
+    credentials: document.getElementById('mpv-credentials').value,
+    notes: document.getElementById('mpv-notes').value,
+    createdAt: existing.createdAt || Date.now(),
+    updatedAt: Date.now()
+  };
+  save(); closeModal(); showNotif(id?'Proveedor actualizado ✓':'Proveedor agregado ✓');
+  renderCurrent();
+}
+
+function deleteProvider(id){
+  const p = D.providers[id];
+  if(!p) return;
+  if(!confirm('¿Borrar el proveedor "'+p.name+'"? Esto no afecta las comisiones existentes de clientes.')) return;
+  delete D.providers[id];
+  save(); closeModal(); showNotif('Proveedor eliminado');
+  renderCurrent();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2914,6 +3752,13 @@ function renderAlertas(){
       <div class="al-time">${a.time}</div>
     </div>`
   ).join('') : '<div class="empty"><div class="em">🔔</div><p>Sin alertas — todo en orden 👍</p></div>';
+}
+
+function updateInboxBadge(){
+  const badge = document.getElementById('inboxBadge');
+  if(!badge) return;
+  const unread = Object.values(D.inbox||{}).filter(m=>!m.read && !m.archived).length;
+  badge.textContent = unread > 0 ? '●' : '';
 }
 
 function updateAlertBadge(){
