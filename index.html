@@ -724,6 +724,33 @@ function runMigrations(){
   if(!D.migrations) D.migrations = {};
   let changed = false;
 
+  if(!D.migrations.dedupe_fees_apr2026){
+    let cleaned = 0;
+    Object.entries(D.clients||{}).forEach(([cid,c])=>{
+      const pending = parseFloat(c.feePendiente) || 0;
+      if(pending <= 0) return;
+      const clientNameLower = (c.name||'').toLowerCase().trim();
+      if(!clientNameLower) return;
+      // Buscar incomeItem que matchee por nombre del cliente y sea tipo "fee"
+      const matchingIncome = Object.values(D.incomeItems||{}).filter(inc=>{
+        const n = (inc.name||'').toLowerCase();
+        if(!n.includes(clientNameLower)) return false;
+        if(!/fee|50%|100%|restante|pendiente/.test(n)) return false;
+        if(inc.status === 'cobrada') return false;
+        return true;
+      });
+      if(matchingIncome.length > 0){
+        const total = matchingIncome.reduce((a,i)=>a+(i.amount||0),0);
+        console.log('[dedupe_fees] Cliente "'+c.name+'": feePendiente='+pending+' tiene '+matchingIncome.length+' incomeItem(s) match (total '+total+'). Preservando incomeItems, limpiando c.feePendiente.');
+        c.feePendiente = 0;
+        cleaned++;
+      }
+    });
+    D.migrations.dedupe_fees_apr2026 = Date.now();
+    changed = true;
+    console.log('[migration] dedupe_fees_apr2026 — ' + cleaned + ' clientes con feePendiente limpiado (se preservaron los incomeItems legacy con mes esperado).');
+  }
+
   if(!D.migrations.providers_catalog_apr2026){
     // Mapeo type→sector para los PROVIDERS hardcoded
     const typeToSector = {
@@ -1921,6 +1948,34 @@ function deleteClient(clientId){
   go('clientes');
 }
 
+
+function dedupeFeesManual(){
+  const clientsToCheck = Object.entries(D.clients||{}).filter(([cid,c])=>(parseFloat(c.feePendiente)||0) > 0);
+  const duplicates = [];
+  clientsToCheck.forEach(([cid,c])=>{
+    const pending = parseFloat(c.feePendiente) || 0;
+    const clientNameLower = (c.name||'').toLowerCase().trim();
+    if(!clientNameLower) return;
+    const matches = Object.values(D.incomeItems||{}).filter(inc=>{
+      const n = (inc.name||'').toLowerCase();
+      return n.includes(clientNameLower) && /fee|50%|100%|restante|pendiente/.test(n) && inc.status !== 'cobrada';
+    });
+    if(matches.length){
+      duplicates.push({cid, name:c.name, pending, matchCount:matches.length, matchTotal:matches.reduce((a,m)=>a+(m.amount||0),0)});
+    }
+  });
+  if(!duplicates.length){ showNotif('✅ Sin duplicados detectados'); return; }
+  const preview = duplicates.map(d=>'• '+d.name+': $'+d.pending+' pendiente + '+d.matchCount+' item(s) legacy por $'+d.matchTotal).join('\n');
+  const msg = 'Detecté '+duplicates.length+' cliente(s) con fees duplicados:\n\n'+preview+'\n\n¿Limpiar? Se preservan los items legacy (con mes esperado) y se pone feePendiente=0 en los clientes.';
+  if(!confirm(msg)) return;
+  duplicates.forEach(d=>{
+    D.clients[d.cid].feePendiente = 0;
+  });
+  save();
+  showNotif('🧹 '+duplicates.length+' cliente(s) limpiado(s)');
+  renderCurrent();
+}
+
 // ── Dedupe y flujo cobrado ────────────────────────────────────
 function normalizeKey(s){ return String(s||'').trim().toLowerCase().replace(/\s+/g,' '); }
 
@@ -2198,15 +2253,15 @@ function findLeadId(l){
 // ═══════════════════════════════════════════════════════════════
 function renderPipeline(){
   // Excluir 'Perdido' del pipeline activo (se ve en Estadísticas)
-  const activeStages = LEAD_STAGES.filter(s => s !== 'Perdido');
-  const openLeads = Object.values(D.leads).filter(l => l.stage !== 'Perdido');
+  const activeStages = LEAD_STAGES.filter(s => s !== 'Perdido' && s !== 'Cerrado');
+  const openLeads = Object.values(D.leads).filter(l => l.stage !== 'Perdido' && l.stage !== 'Cerrado');
   const tabs = ['Todos', ...activeStages];
   document.getElementById('pipeTabs').innerHTML = tabs.map(t=>{
     const cnt = t==='Todos' ? openLeads.length : openLeads.filter(l=>l.stage===t).length;
     return `<button class="ftab${pipeFilter===t?' on':''}" onclick="pipeFilter='${t}';renderPipeline()">${t} (${cnt})</button>`;
   }).join('');
 
-  let leads = Object.entries(D.leads).map(([id,l])=>({...l,_id:id})).filter(l => l.stage !== 'Perdido');
+  let leads = Object.entries(D.leads).map(([id,l])=>({...l,_id:id})).filter(l => l.stage !== 'Perdido' && l.stage !== 'Cerrado');
   if(pipeFilter!=='Todos') leads = leads.filter(l=>l.stage===pipeFilter);
   leads.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
 
@@ -2666,13 +2721,13 @@ function renderCash(){
 
     const headerCols = `<th style="padding:6px;text-align:left;font-size:10px;color:var(--tx3)">ITEM</th>` + months.map(m=>`<th style="padding:6px;text-align:right;font-size:10px;color:var(--tx3)">${m}</th>`).join('') + `<th style="padding:6px;text-align:right;font-size:10px;color:var(--tx3)">TOTAL</th>`;
 
-    const expenseMonthly = ymArr.map((ym,i) => getMonthExpenses(i).total);
+    const expenseMonthly = ymArr.map((ym,i) => getMonthExpenses(parseInt(ym.split('-')[1])-1).total);
     const expenseCells = expenseMonthly.map(v => `<td style="padding:6px 8px;text-align:right;color:var(--rd);font-size:11px">-${v.toFixed(0)}</td>`).join('');
     const totalExp = expenseMonthly.reduce((a,b)=>a+b,0);
 
     const profitRow = ymArr.map((ym,i) => {
       const inc = items.filter(it => it.month===ym).reduce((a,it)=>a+(it.amount||0),0);
-      const net = inc - expenseMonthly[i];
+      const net = inc - expenseMonthly[i]; // ya correcto, expenseMonthly tiene los valores bien
       return `<td style="padding:6px;text-align:right;font-weight:700;font-size:11px;color:${net>=0?'var(--gn)':'var(--rd)'}">${net>=0?'+':''}${net.toFixed(0)}</td>`;
     }).join('');
     const totalInc = items.reduce((a,it)=>a+(it.amount||0),0);
@@ -2727,7 +2782,7 @@ function renderCash(){
 
     const chartData = ymArr.map((ym2,i)=>{
       const inc = items.filter(it => it.month===ym2).reduce((a,it)=>a+(it.amount||0),0);
-      const exp = getMonthExpenses(i).total;
+      const exp = getMonthExpenses(parseInt(ym2.split('-')[1])-1).total;
       return {label:months[i], income:inc, expense:exp};
     });
     const chartLabel = cashRolling ? 'próximos 12 meses' : year;
@@ -2772,7 +2827,7 @@ function renderCash(){
     const periodLabel = cashRolling ? 'próximos 12m' : year;
     const monthlyData = ymArr.map((ym,i)=>{
       const inc = items.filter(it => it.month===ym).reduce((a,it)=>a+(it.amount||0),0);
-      const exp = getMonthExpenses(i).total;
+      const exp = getMonthExpenses(parseInt(ym.split('-')[1])-1).total;
       return {month:months[i], ingreso:inc, gasto:exp, neto:inc-exp};
     });
     const totalIngresos = monthlyData.reduce((a,m)=>a+m.ingreso,0);
@@ -2798,18 +2853,98 @@ function renderCash(){
     const allCobrado = items.filter(it=>it.status==='cobrada').reduce((a,it)=>a+(it.amount||0),0);
     const allProyectado = items.filter(it=>it.status==='proyectado').reduce((a,it)=>a+(it.amount||0),0);
 
-    content = `<div class="lcard" style="cursor:default"><div class="lcard-name" style="margin-bottom:8px">💰 Cobrado (ya en la caja)</div><div class="cfrow"><span>Total cobrado ${year}</span><span class="cfval pos">USD ${allCobrado.toFixed(0)}</span></div></div>`
-      + `<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">⏳ Pendiente (confirmado pero no cobrado)</div><div class="cfrow"><span>Fees + comisiones pendientes</span><span class="cfval" style="color:var(--yw)">USD ${allPending.toFixed(0)}</span></div></div>`
-      + `<div class="lcard" style="cursor:default;margin-top:8px"><div class="lcard-name" style="margin-bottom:8px">🔮 Proyectado (probables)</div><div class="cfrow"><span>Proyecciones de leads</span><span class="cfval" style="color:var(--pp)">USD ${allProyectado.toFixed(0)}</span></div></div>`;
+    // Items pendientes + proyectados para mostrar en breakdown mensual
+    const futureItems = items.filter(it => it.status==='pendiente' || it.status==='proyectado');
+
+    // Agrupar por mes
+    const byMonth = {};
+    const noMonth = [];
+    futureItems.forEach(it=>{
+      if(it.month){
+        if(!byMonth[it.month]) byMonth[it.month] = [];
+        byMonth[it.month].push(it);
+      } else {
+        noMonth.push(it);
+      }
+    });
+    const sortedMonths = Object.keys(byMonth).sort();
+
+    // Render del breakdown mensual
+    let breakdownHTML = '';
+    if(sortedMonths.length){
+      sortedMonths.forEach(ym => {
+        const list = byMonth[ym];
+        const total = list.reduce((a,it)=>a+(it.amount||0),0);
+        const pendingPart = list.filter(it=>it.status==='pendiente').reduce((a,it)=>a+(it.amount||0),0);
+        const projectedPart = list.filter(it=>it.status==='proyectado').reduce((a,it)=>a+(it.amount||0),0);
+        breakdownHTML += `<div class="lcard" style="cursor:default;margin-top:8px">
+          <div class="lcard-name" style="margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+            <span>📅 ${ymToLabel(ym)}</span>
+            <span style="color:var(--gold);font-size:14px">USD ${total.toLocaleString()}</span>
+          </div>
+          <div style="font-size:10px;color:var(--tx3);margin-bottom:6px">${list.length} item(s)${pendingPart>0?' · ⏳ pendiente '+pendingPart.toLocaleString():''}${projectedPart>0?' · 🔮 proyectado '+projectedPart.toLocaleString():''}</div>
+          ${list.map(it=>{
+            const col = it.status==='proyectado' ? 'var(--pp)' : 'var(--yw)';
+            const ic = it.status==='proyectado' ? '🔮' : '⏳';
+            const onclickAttr = it.projectedId ? `onclick="openProjectedModal('${it.projectedId}')"` : (it.incomeItemId ? `onclick="openIncomeItemModal('${it.incomeItemId}')"` : (it.clientId ? `onclick="showClientDetail('${it.clientId}')"` : ''));
+            return `<div class="cfrow" style="cursor:${onclickAttr?'pointer':'default'};padding-left:12px" ${onclickAttr}>
+              <span style="font-size:12px">${ic} ${it.name}</span>
+              <span class="cfval" style="color:${col};font-size:12px">USD ${(it.amount||0).toLocaleString()}</span>
+            </div>`;
+          }).join('')}
+        </div>`;
+      });
+    }
+
+    // Sección "Sin mes asignado"
+    let noMonthHTML = '';
+    if(noMonth.length){
+      const noMonthTotal = noMonth.reduce((a,it)=>a+(it.amount||0),0);
+      noMonthHTML = `<div class="lcard" style="cursor:default;margin-top:8px;border:1px dashed var(--rd)">
+        <div class="lcard-name" style="margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+          <span>⚠️ Sin mes asignado</span>
+          <span style="color:var(--rd);font-size:14px">USD ${noMonthTotal.toLocaleString()}</span>
+        </div>
+        <div style="font-size:10px;color:var(--tx3);margin-bottom:6px">Asigná un mes esperado editando cada item para verlo proyectado</div>
+        ${noMonth.map(it=>{
+          const col = it.status==='proyectado' ? 'var(--pp)' : 'var(--yw)';
+          const ic = it.status==='proyectado' ? '🔮' : '⏳';
+          const onclickAttr = it.projectedId ? `onclick="openProjectedModal('${it.projectedId}')"` : (it.incomeItemId ? `onclick="openIncomeItemModal('${it.incomeItemId}')"` : (it.clientId ? `onclick="showClientDetail('${it.clientId}')"` : ''));
+          return `<div class="cfrow" style="cursor:${onclickAttr?'pointer':'default'};padding-left:12px" ${onclickAttr}>
+            <span style="font-size:12px">${ic} ${it.name}</span>
+            <span class="cfval" style="color:${col};font-size:12px">USD ${(it.amount||0).toLocaleString()}</span>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }
+
+    content = `<div class="kgrid" style="margin-top:8px">
+      <div class="kcard"><div class="kl">💰 Cobrado ${year}</div><div class="kv" style="color:var(--gn)">USD ${allCobrado.toFixed(0)}</div></div>
+      <div class="kcard"><div class="kl">⏳ Pendiente por cobrar</div><div class="kv" style="color:var(--yw)">USD ${allPending.toFixed(0)}</div></div>
+      <div class="kcard"><div class="kl">🔮 Proyectado (probables)</div><div class="kv" style="color:var(--pp)">USD ${allProyectado.toFixed(0)}</div></div>
+      <div class="kcard"><div class="kl">💼 Total futuro</div><div class="kv" style="color:var(--gold)">USD ${(allPending+allProyectado).toFixed(0)}</div></div>
+    </div>
+    <div style="margin:16px 0 4px;padding:0 4px;display:flex;justify-content:space-between;align-items:center"><div><b>📅 Detalle mensual de lo que vas a cobrar</b><br><span style="font-size:11px;color:var(--tx3)">⏳ amarillo = pendiente (confirmado) · 🔮 violeta = proyectado (probable). Click para editar.</span></div><button class="btn-add" onclick="dedupeFeesManual()">🧹 Limpiar duplicados</button></div>
+    ${breakdownHTML}
+    ${noMonthHTML}
+    ${!breakdownHTML && !noMonthHTML ? '<div class="empty" style="padding:32px;margin-top:16px"><div class="em">✅</div><p>No tenés nada por cobrar</p></div>' : ''}
+    `;
   }
 
-  document.getElementById('cashArea').innerHTML = viewTabs + content
-    + `<div class="shdr"><h3>Movimientos</h3><div style="display:flex;gap:6px"><button class="btn-add" onclick="exportCommissions()">📊 Exportar</button><button class="btn-add" onclick="openModal('addPayment')">+ Pago</button></div></div>`
-    + (payments.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,10).map(p=>{
-        const cn=clients[p.clientId]?.name||'—';
-        const sc=p.status==='Cobrado'?'pos':'neg';
-        return `<div class="cfrow"><span>${cn}<br><span style="font-size:10px;color:var(--tx3)">${p.concept} · ${p.method} · ${p.date||''}</span></span><span class="cfval ${sc}">USD ${p.amount.toLocaleString()}</span></div>`;
-      }).join('')||`<div style="font-size:12px;color:var(--tx3);padding:8px">Sin movimientos</div>`);
+  // Sección Movimientos solo en vista Mensual (es la única donde tiene sentido el detalle de transacciones recientes)
+  const showMovimientos = (cashView === 'mensual');
+  const movimientosHTML = showMovimientos
+    ? `<div class="shdr"><h3>Últimos 10 movimientos</h3><div style="display:flex;gap:6px"><button class="btn-add" onclick="exportCommissions()">📊 Exportar</button><button class="btn-add" onclick="openModal('addPayment')">+ Pago</button></div></div>`
+      + (payments.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,10).map(p=>{
+          const cn=clients[p.clientId]?.name||'—';
+          const isCobrado = p.status==='Cobrado';
+          const col = isCobrado ? 'var(--gn)' : 'var(--yw)';
+          const ic = isCobrado ? '💰' : '⏳';
+          return `<div class="cfrow"><span>${ic} ${cn}<br><span style="font-size:10px;color:var(--tx3)">${p.concept} · ${p.method} · ${p.date||'sin fecha'}</span></span><span class="cfval" style="color:${col}">USD ${p.amount.toLocaleString()}</span></div>`;
+        }).join('') || `<div style="font-size:12px;color:var(--tx3);padding:8px">Sin movimientos</div>`)
+    : '';
+
+  document.getElementById('cashArea').innerHTML = viewTabs + content + movimientosHTML;
 }
 
 
@@ -3775,4 +3910,4 @@ function updateAlertBadge(){
 </script>
 </body>
 </html>
-feat: CashFlow completo + gastos e ingresos editables + estadísticas + cliente eliminar
+fix: duplicados fees auto + limpieza HTML + pipeline esconde Cerrado + matriz gastos mes correcto + Proyección futura rediseñada
